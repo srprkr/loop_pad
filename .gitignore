@@ -1,11 +1,8 @@
+node_modules/
+dist/
+.DS_Store
+.vscode/
+
+# Old native build output (from when this was a plugin)
 build/
 build-*/
-cmake-build-*/
-ui/node_modules/
-ui/dist/
-.DS_Store
-.vs/
-.vscode/
-*.user
-installer/windows/Output/
-installer/windows/MicrosoftEdgeWebview2Setup.exe

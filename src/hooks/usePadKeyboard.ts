@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { usePluginStore } from "../state/pluginStore";
+import { useAppStore } from "../state/store";
 
 // Each pad's `key` triggers it (source_code.jsx:1048-1065):
 //   3x3  1 2 3 / Q W E / A S D
@@ -15,7 +15,7 @@ export function usePadKeyboard() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
 
-      const { kit, triggerPad } = usePluginStore.getState();
+      const { kit, triggerPad } = useAppStore.getState();
       const key = e.key.toUpperCase();
       const index = kit.pads[kit.gridSize].findIndex((p) => p.key.toUpperCase() === key);
       if (index < 0) return;

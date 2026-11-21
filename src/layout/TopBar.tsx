@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Pause, Play, Volume2, VolumeX } from "lucide-react";
-import { pluginApi } from "../bridge/api";
 import { Slider } from "../components/Slider";
 import { GRID_SIZES } from "../data/defaultPads";
-import { useParam, useToggleParam } from "../state/hooks";
-import { BPM_RANGE } from "../state/parameterIds";
-import { usePluginStore, useTelemetryStore } from "../state/pluginStore";
+import { BPM_RANGE } from "../state/defaults";
+import { useAppStore, useTelemetryStore } from "../state/store";
 
 // source_code.jsx:1080-1240. Grid size (left), transport (centre), master volume (right).
 
@@ -20,8 +18,8 @@ export function TopBar() {
 }
 
 function GridSizeToggle() {
-  const gridSize = usePluginStore((s) => s.kit.gridSize);
-  const setGridSize = usePluginStore((s) => s.setGridSize);
+  const gridSize = useAppStore((s) => s.kit.gridSize);
+  const setGridSize = useAppStore((s) => s.setGridSize);
 
   return (
     <div className="flex shrink-0 items-center rounded-lg border border-zinc-800 bg-zinc-900 p-1">
@@ -43,13 +41,15 @@ function GridSizeToggle() {
 //==============================================================================
 function Transport() {
   const mode = useTelemetryStore((s) => s.mode);
+  const record = useAppStore((s) => s.record);
+  const togglePlay = useAppStore((s) => s.togglePlay);
   const recording = mode === "countIn" || mode === "recording";
   const playing = mode === "playing";
 
   return (
     <div className="mx-auto flex shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1">
       <button
-        onClick={() => void pluginApi.record()}
+        onClick={record}
         className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-medium transition-all ${
           recording ? "animate-pulse bg-rose-600 text-white" : "bg-zinc-800 text-rose-400 hover:bg-zinc-700"
         }`}
@@ -60,7 +60,7 @@ function Transport() {
       </button>
 
       <button
-        onClick={() => void pluginApi.togglePlay()}
+        onClick={togglePlay}
         className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-medium transition-all ${
           playing ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
         }`}
@@ -77,7 +77,8 @@ function Transport() {
 }
 
 function MetronomeButton() {
-  const [enabled, setEnabled] = useToggleParam("metronome");
+  const enabled = useAppStore((s) => s.settings.metronome);
+  const updateSettings = useAppStore((s) => s.updateSettings);
   const recordBeat = useTelemetryStore((s) => s.recordBeat);
   const [flash, setFlash] = useState(false);
   const firstBeat = useRef(recordBeat);
@@ -92,7 +93,7 @@ function MetronomeButton() {
 
   return (
     <button
-      onClick={() => setEnabled(!enabled)}
+      onClick={() => updateSettings({ metronome: !enabled })}
       className={`rounded-md border p-1.5 transition-all ${
         flash
           ? "scale-105 border-emerald-400 bg-emerald-500 text-black shadow-lg shadow-emerald-500/50"
@@ -114,23 +115,22 @@ function MetronomeButton() {
 const clampBpm = (bpm: number) => Math.max(BPM_RANGE.min, Math.min(BPM_RANGE.max, Math.round(bpm)));
 
 function TempoControl() {
-  const bpm = useParam("bpm");
-  const hostSynced = useTelemetryStore((s) => s.hostSynced);
-  const hostBpm = useTelemetryStore((s) => s.bpm);
-  const shown = hostSynced ? Math.round(hostBpm) : bpm.value;
+  const bpm = useAppStore((s) => s.settings.bpm);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const setBpm = (value: number) => updateSettings({ bpm: clampBpm(value) });
 
   // Typed text is committed on Enter / blur, so typing "1" on the way to "140" doesn't clamp to 60.
-  const [text, setText] = useState(String(shown));
+  const [text, setText] = useState(String(bpm));
   const editing = useRef(false);
   useEffect(() => {
-    if (!editing.current) setText(String(shown));
-  }, [shown]);
+    if (!editing.current) setText(String(bpm));
+  }, [bpm]);
 
   const commit = () => {
     editing.current = false;
     const parsed = parseInt(text, 10);
-    const next = Number.isFinite(parsed) ? clampBpm(parsed) : bpm.value;
-    bpm.set(next);
+    const next = Number.isFinite(parsed) ? clampBpm(parsed) : bpm;
+    setBpm(next);
     setText(String(next));
   };
 
@@ -143,7 +143,7 @@ function TempoControl() {
     taps.current = recent;
     if (recent.length < 2) return;
     const avgMs = (recent[recent.length - 1] - recent[0]) / (recent.length - 1);
-    bpm.set(clampBpm(60000 / avgMs));
+    setBpm(60000 / avgMs);
   };
 
   return (
@@ -153,25 +153,23 @@ function TempoControl() {
         min={BPM_RANGE.min}
         max={BPM_RANGE.max}
         value={text}
-        disabled={hostSynced}
-        title={hostSynced ? "Following the host tempo" : "Tempo (BPM)"}
+        title="Tempo (BPM)"
         onFocus={() => (editing.current = true)}
         onChange={(e) => {
           setText(e.target.value);
           // Spinner arrows and arrow keys change the value in steps of 1; apply those at once.
           const parsed = parseInt(e.target.value, 10);
-          if (Math.abs(parsed - bpm.value) === 1) bpm.set(clampBpm(parsed));
+          if (Math.abs(parsed - bpm) === 1) setBpm(parsed);
         }}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
-        className="w-14 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-center font-mono text-xs text-zinc-100 focus:border-indigo-500 focus:outline-none disabled:text-zinc-400"
+        className="w-14 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-center font-mono text-xs text-zinc-100 focus:border-indigo-500 focus:outline-none"
       />
       <button
         onClick={tap}
-        disabled={hostSynced}
-        className="rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-semibold text-zinc-300 transition-colors hover:bg-zinc-700 active:bg-indigo-600 active:text-white disabled:opacity-50"
+        className="rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-semibold text-zinc-300 transition-colors hover:bg-zinc-700 active:bg-indigo-600 active:text-white"
         title="Tap rhythmically to set BPM"
       >
         TAP
@@ -182,13 +180,14 @@ function TempoControl() {
 
 //==============================================================================
 function VolumeControl() {
-  const volume = useParam("masterVolume");
-  const [muted, setMuted] = useToggleParam("mute");
+  const volume = useAppStore((s) => s.settings.volume);
+  const muted = useAppStore((s) => s.settings.muted);
+  const updateSettings = useAppStore((s) => s.updateSettings);
 
   return (
     <div className="flex shrink-0 items-center gap-2">
       <button
-        onClick={() => setMuted(!muted)}
+        onClick={() => updateSettings({ muted: !muted })}
         className="rounded-lg border border-zinc-700/60 bg-zinc-800/80 p-1.5 text-zinc-300 transition-colors hover:bg-zinc-700"
         title={muted ? "Unmute" : "Mute"}
       >
@@ -197,7 +196,7 @@ function VolumeControl() {
       <div className="flex w-16 flex-col gap-1">
         <div className="flex justify-between font-mono text-[9px] text-zinc-400">
           <span>VOL</span>
-          <span>{muted ? "0%" : `${Math.round(volume.value * 100)}%`}</span>
+          <span>{muted ? "0%" : `${Math.round(volume * 100)}%`}</span>
         </div>
         <Slider
           orientation="horizontal"
@@ -205,13 +204,8 @@ function VolumeControl() {
           min={0}
           max={1}
           step={0.01}
-          value={muted ? 0 : volume.value}
-          onBegin={volume.beginGesture}
-          onEnd={volume.endGesture}
-          onChange={(v) => {
-            volume.set(v);
-            if (muted) setMuted(false); // moving the slider unmutes
-          }}
+          value={muted ? 0 : volume}
+          onChange={(v) => updateSettings({ volume: v, muted: false })} // moving the slider unmutes
         />
       </div>
     </div>

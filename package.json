@@ -1,8 +1,8 @@
 {
-  "name": "plugin-ui",
+  "name": "loop-pad",
   "private": true,
   "version": "0.1.0",
-  "description": "React UI for the plugin, rendered inside its web view.",
+  "description": "A drum-pad loop recorder in the browser, using Web Audio.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,7 +24,6 @@
     "postcss": "8.4.49",
     "tailwindcss": "3.4.17",
     "typescript": "5.6.3",
-    "vite": "5.4.21",
-    "vite-plugin-singlefile": "2.0.3"
+    "vite": "5.4.21"
   }
 }

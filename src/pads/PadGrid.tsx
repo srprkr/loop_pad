@@ -1,17 +1,17 @@
 import { memo } from "react";
-import type { GridSize, PadConfig } from "../bridge/types";
+import type { GridSize, PadConfig } from "../types";
 import { gridColumns } from "../data/defaultPads";
 import { themeFor } from "../data/themes";
-import { useFlashStore, usePluginStore } from "../state/pluginStore";
+import { useFlashStore, useAppStore } from "../state/store";
 
 // source_code.jsx:1243-1315.
 
 /** `reservedHeight`: space below the grid (EDIT bar, inspector) the square must leave free. */
 export function PadGrid({ reservedHeight }: { reservedHeight: number }) {
-  const gridSize = usePluginStore((s) => s.kit.gridSize);
-  const pads = usePluginStore((s) => s.kit.pads[s.kit.gridSize]);
-  const selected = usePluginStore((s) => s.ui.selectedPad[s.kit.gridSize] ?? 0);
-  const triggerPad = usePluginStore((s) => s.triggerPad);
+  const gridSize = useAppStore((s) => s.kit.gridSize);
+  const pads = useAppStore((s) => s.kit.pads[s.kit.gridSize]);
+  const selected = useAppStore((s) => s.ui.selectedPad[s.kit.gridSize] ?? 0);
+  const triggerPad = useAppStore((s) => s.triggerPad);
   const columns = gridColumns(gridSize);
 
   return (

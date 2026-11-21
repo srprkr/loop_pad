@@ -1,21 +1,7 @@
-// Data shapes exchanged with the plugin (plugin/source/WebUiBridge.cpp).
+// Shared data shapes.
 
-import type { SoundCategory } from "../data/kit";
-import type { ColorThemeKey } from "../data/themes";
-import type { ParamId } from "../state/parameterIds";
-
-export type ParameterKind = "float" | "int" | "bool" | "choice";
-
-export interface ParameterInfo {
-  id: ParamId;
-  name: string;
-  kind: ParameterKind;
-  min: number;
-  max: number;
-  defaultValue: number;
-  value: number; // plain value: 0..1 gain, BPM, 0/1 for bools...
-  choices?: string[];
-}
+import type { SoundCategory } from "./data/kit";
+import type { ColorThemeKey } from "./data/themes";
 
 export type GridSize = "3x3" | "4x4" | "5x5";
 
@@ -30,13 +16,21 @@ export interface PadConfig {
   volume: number; // 0 .. 1.3
 }
 
-/** The three pad sets and which one is showing. Saved with the plugin state; drives MIDI input. */
+/** The three pad sets and which one is showing. */
 export interface KitState {
   gridSize: GridSize;
   pads: Record<GridSize, PadConfig[]>;
 }
 
-/** Per-instance view settings, saved with the plugin state. */
+/** Master volume, mute, tempo and metronome. */
+export interface Settings {
+  volume: number; // 0..1
+  muted: boolean;
+  bpm: number; // 60..200
+  metronome: boolean;
+}
+
+/** View settings. */
 export interface UiState {
   inspectorOpen: boolean;
   selectedPad: Record<GridSize, number>;
@@ -53,30 +47,19 @@ export interface LoopNote {
   padKey: string;
 }
 
-export interface InitialState {
-  parameters: ParameterInfo[];
-  kit: KitState | null;
-  uiState: Partial<UiState> | null;
-  productName: string;
-  version: string;
-}
-
 export interface PadHit {
   padKey: string;
   soundType: string;
 }
 
+/** What the engine reports ~30 times a second. */
 export interface Telemetry {
-  peak: [number, number];
   mode: TransportMode;
   /** Current 16th step, 0..63 (count-in: -12..-1). */
   step: number;
   /** Counts metronome beats during recording; the metronome button flashes when it changes. */
   recordBeat: number;
-  /** Tempo the transport is running at (the host's while the host plays). */
-  bpm: number;
-  hostSynced: boolean;
-  /** Loop-playback hits since the last telemetry message. */
+  /** Loop-playback hits since the last report. */
   hits: PadHit[];
   /** Number of hits in the recorded loop. */
   loopLength: number;

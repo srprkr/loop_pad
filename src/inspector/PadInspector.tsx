@@ -2,7 +2,7 @@ import { ChevronDown, Disc, Palette, Sliders } from "lucide-react";
 import { Slider } from "../components/Slider";
 import { KIT_SOUNDS, PAD_VOLUME_RANGE, PITCH_RANGE, findSound } from "../data/kit";
 import { COLOR_THEMES, THEME_KEYS, themeFor } from "../data/themes";
-import { usePluginStore, useSelectedPad } from "../state/pluginStore";
+import { useAppStore, useSelectedPad } from "../state/store";
 
 // source_code.jsx:1332-1487. Shown while EDIT is on; edits the selected pad of the current grid.
 
@@ -33,8 +33,8 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 
 function PadFaders() {
   const { pad } = useSelectedPad();
-  const update = usePluginStore((s) => s.updateSelectedPad);
-  const preview = usePluginStore((s) => s.previewSelectedPad);
+  const update = useAppStore((s) => s.updateSelectedPad);
+  const preview = useAppStore((s) => s.previewSelectedPad);
 
   // Releasing a fader auditions the pad; double-click resets and auditions (source_code.jsx:1348-1423).
   const pitch = pad.pitchSemitones;
@@ -97,8 +97,8 @@ function Fader({ label, readout, value, min, max, step, resetTitle, onChange, on
 
 function SampleSelect() {
   const { pad } = useSelectedPad();
-  const update = usePluginStore((s) => s.updateSelectedPad);
-  const preview = usePluginStore((s) => s.previewSelectedPad);
+  const update = useAppStore((s) => s.updateSelectedPad);
+  const preview = useAppStore((s) => s.previewSelectedPad);
 
   return (
     <Card className="flex-col justify-center gap-2 p-3.5">
@@ -135,7 +135,7 @@ function SampleSelect() {
 
 function ColorPalette() {
   const { pad } = useSelectedPad();
-  const update = usePluginStore((s) => s.updateSelectedPad);
+  const update = useAppStore((s) => s.updateSelectedPad);
 
   return (
     <Card className="flex-col justify-center gap-2 p-3.5">

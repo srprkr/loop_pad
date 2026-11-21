@@ -1,42 +1,52 @@
-// In-browser stand-in for the plugin, used by `npm run dev` outside a DAW.
+// The Loop Pad audio engine: the prototype's Web Audio synth plus the loop transport
+// (source_code.jsx:910-1046).
 //
-// It keeps state in memory and runs the prototype's Web Audio synth and loop transport, so the
-// UI makes sound in a browser. The real engine is C++ (engine/src/LoopPadEngine.cpp) and follows
-// the same rules:
-//   - REC: 3-beat count-in, then exactly 4 bars (64 sixteenth steps) of recording, then the
-//     loop plays back. Hits snap to the nearest 16th; a hit in the last half step of the
-//     count-in lands on step 0. Recording replaces the previous loop.
-//   - PLAY: loops from step 0. Metronome clicks on quarter notes, accent on each bar.
+//   - REC: 3-beat count-in, then exactly 4 bars (64 sixteenth steps) of recording, then the loop
+//     plays back. Hits snap to the nearest 16th; a hit in the last half step of the count-in
+//     lands on step 0. A new take replaces the loop once it starts recording.
+//   - PLAY: loops from step 0. The metronome clicks on quarter notes (accent on each bar) during
+//     the count-in, recording and playback.
+//
+// Timing uses Web Audio's clock with a 100 ms look-ahead scheduler, so hits and clicks land
+// exactly on their steps even though the scheduler itself runs on a timer.
 
-import type { Backend, PluginEvents } from "./api";
-import type { InitialState, KitState, LoopNote, PadHit, Telemetry, TransportMode, UiState } from "./types";
-import { createNoiseBuffer, playMetronomeClick, triggerSound } from "../audio/webSynth";
-import { DEFAULT_PARAMETERS } from "../state/defaults";
-import type { ParamId } from "../state/parameterIds";
-
-type Listener = (payload: unknown) => void;
+import type { LoopNote, PadHit, Settings, Telemetry, TransportMode } from "../types";
+import { createNoiseBuffer, playMetronomeClick, triggerSound } from "./webSynth";
 
 const LOOP_STEPS = 64;
 const COUNT_IN_STEPS = 12; // 3 beats
 const LOOKAHEAD_SEC = 0.1;
+const SCHEDULE_INTERVAL_MS = 25;
+const TELEMETRY_INTERVAL_MS = 33;
 
 type TimedEvent = { time: number } & ({ kind: "beat" } | { kind: "hit"; hit: PadHit });
 
-export function createMockBackend(): Backend {
-  const listeners = new Map<string, Set<Listener>>();
-  const emit = <K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]) =>
-    listeners.get(event)?.forEach((fn) => fn(payload));
+export interface AudioEngine {
+  setSettings(settings: Settings): void;
+  /** Plays a pad. While recording, the hit is also quantized into the loop. */
+  triggerPad(soundType: string, pitchSemitones: number, volume: number, padKey: string): void;
+  /** Plays a sound without recording it (inspector auditions). */
+  previewSound(soundType: string, pitchSemitones: number, volume: number): void;
+  /** REC: starts the count-in, or stops while counting in / recording. */
+  record(): void;
+  /** PLAY / PAUSE. Playback always starts from step 0. */
+  togglePlay(): void;
+  stop(): void;
+  getLoop(): LoopNote[];
+  setLoop(loop: LoopNote[]): void;
+  onTelemetry(fn: (t: Telemetry) => void): () => void;
+  /** Called whenever the recorded loop changes. */
+  onLoopChange(fn: (loop: LoopNote[]) => void): () => void;
+}
 
-  const params = new Map<ParamId, number>(DEFAULT_PARAMETERS.map((p) => [p.id, p.defaultValue]));
-  const param = (id: ParamId) => params.get(id) ?? 0;
-  let uiState: Partial<UiState> | null = null;
-  let kit: KitState | null = null;
+export function createAudioEngine(initial: Settings): AudioEngine {
+  let settings = initial;
 
   //==========================================================================
   // Audio graph, created on the first user gesture (browsers block audio before that).
   let audio: { ctx: AudioContext; master: GainNode; noise: AudioBuffer } | null = null;
 
-  const masterLevel = () => (param("mute") >= 0.5 ? 0 : param("masterVolume"));
+  const masterLevel = () => (settings.muted ? 0 : settings.volume);
 
   function getAudio() {
     if (!audio) {
@@ -61,8 +71,13 @@ export function createMockBackend(): Backend {
   let timedEvents: TimedEvent[] = [];
   let recordBeat = 0;
 
-  const secondsPerStep = () => 60 / param("bpm") / 4;
+  const telemetryListeners = new Set<(t: Telemetry) => void>();
+  const loopListeners = new Set<(loop: LoopNote[]) => void>();
+  const loopChanged = () => loopListeners.forEach((fn) => fn(loop));
+
+  const secondsPerStep = () => 60 / settings.bpm / 4;
   const positionAt = (time: number) => nextStep - (nextStepTime - time) / secondsPerStep();
+  const currentMode = () => (running && audio ? modeAt(positionAt(audio.ctx.currentTime)) : "idle");
 
   function modeAt(position: number): TransportMode {
     if (!running) return "idle";
@@ -75,6 +90,7 @@ export function createMockBackend(): Backend {
     if (loopClearedForTake) return;
     loopClearedForTake = true;
     loop = [];
+    loopChanged();
   }
 
   function start(withRecording: boolean) {
@@ -95,20 +111,19 @@ export function createMockBackend(): Backend {
   function schedule() {
     if (!running || !audio) return;
     const { ctx, master, noise } = audio;
-    const metronome = param("metronome") >= 0.5;
 
     while (nextStepTime < ctx.currentTime + LOOKAHEAD_SEC) {
       const step = nextStep;
       const time = nextStepTime;
 
       if (step < 0) {
-        if (step % 4 === 0 && metronome) playMetronomeClick(ctx, master, time, true, step === -COUNT_IN_STEPS);
+        if (step % 4 === 0 && settings.metronome) playMetronomeClick(ctx, master, time, true, step === -COUNT_IN_STEPS);
       } else {
         const loopStep = step % LOOP_STEPS;
         const recordingPass = recordRun && step < LOOP_STEPS;
 
         if (loopStep % 4 === 0) {
-          if (metronome) playMetronomeClick(ctx, master, time, false, loopStep % 16 === 0);
+          if (settings.metronome) playMetronomeClick(ctx, master, time, false, loopStep % 16 === 0);
           if (recordingPass) timedEvents.push({ time, kind: "beat" });
         }
 
@@ -135,8 +150,10 @@ export function createMockBackend(): Backend {
 
     const step = Math.max(0, Math.round(position)) % LOOP_STEPS;
     clearLoopForNewTake();
+    // The same sound on the same step replaces the earlier hit (source_code.jsx:880-884).
     loop = loop.filter((n) => !(n.step === step && n.soundType === soundType));
     loop.push({ step, soundType, pitchSemitones, volume, padKey });
+    loopChanged();
   }
 
   function telemetry(): Telemetry {
@@ -152,76 +169,61 @@ export function createMockBackend(): Backend {
     const position = running ? positionAt(now) : 0;
     const mode = modeAt(position);
     const step = mode === "idle" ? 0 : mode === "countIn" ? Math.floor(position) : Math.floor(position) % LOOP_STEPS;
-
-    return {
-      peak: [0, 0],
-      mode,
-      step,
-      recordBeat,
-      bpm: param("bpm"),
-      hostSynced: false,
-      hits,
-      loopLength: loop.length,
-    };
+    return { mode, step, recordBeat, hits, loopLength: loop.length };
   }
 
-  window.setInterval(schedule, 25);
-  window.setInterval(() => emit("telemetry", telemetry()), 33);
+  window.setInterval(schedule, SCHEDULE_INTERVAL_MS);
+  window.setInterval(() => {
+    const t = telemetry();
+    telemetryListeners.forEach((fn) => fn(t));
+  }, TELEMETRY_INTERVAL_MS);
 
   //==========================================================================
-  const handlers: Record<string, (...args: never[]) => unknown> = {
-    getInitialState: (): InitialState => ({
-      parameters: DEFAULT_PARAMETERS.map((p) => ({ ...p, value: params.get(p.id) ?? p.defaultValue })),
-      kit,
-      uiState,
-      productName: "Loop Pad",
-      version: "dev",
-    }),
-    setUiState: (state: UiState) => { uiState = state; },
-    setKit: (state: KitState) => { kit = state; },
-
-    setParameter: (id: ParamId, value: number) => {
-      params.set(id, value);
-      if (audio && (id === "masterVolume" || id === "mute"))
-        audio.master.gain.setTargetAtTime(masterLevel(), audio.ctx.currentTime, 0.01);
+  return {
+    setSettings(next) {
+      settings = next;
+      if (audio) audio.master.gain.setTargetAtTime(masterLevel(), audio.ctx.currentTime, 0.01);
     },
-    beginGesture: () => undefined,
-    endGesture: () => undefined,
 
-    triggerPad: (soundType: string, pitch: number, volume: number, padKey: string) => {
+    triggerPad(soundType, pitch, volume, padKey) {
       const { ctx, master, noise } = getAudio();
       triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime);
       recordHit(soundType, pitch, volume, padKey, ctx.currentTime);
     },
-    previewSound: (soundType: string, pitch: number, volume: number) => {
+
+    previewSound(soundType, pitch, volume) {
       const { ctx, master, noise } = getAudio();
       triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime);
     },
 
-    record: () => {
-      const mode = running && audio ? modeAt(positionAt(audio.ctx.currentTime)) : "idle";
+    record() {
+      const mode = currentMode();
       if (mode === "countIn" || mode === "recording") stop();
       else start(true);
     },
-    togglePlay: () => {
-      const mode = running && audio ? modeAt(positionAt(audio.ctx.currentTime)) : "idle";
-      if (mode === "playing") stop();
+
+    togglePlay() {
+      if (currentMode() === "playing") stop();
       else start(false);
     },
-    stop: () => stop(),
-  };
 
-  return {
-    call: async <T,>(name: string, ...args: unknown[]) => {
-      const handler = handlers[name] as ((...a: unknown[]) => unknown) | undefined;
-      if (!handler) throw new Error(`Mock backend has no '${name}'`);
-      return (await handler(...args)) as T;
+    stop,
+
+    getLoop: () => loop,
+
+    setLoop(next) {
+      loop = next;
+      loopChanged();
     },
-    on: (event, fn) => {
-      const set = listeners.get(event) ?? new Set<Listener>();
-      set.add(fn as Listener);
-      listeners.set(event, set);
-      return () => set.delete(fn as Listener);
+
+    onTelemetry(fn) {
+      telemetryListeners.add(fn);
+      return () => telemetryListeners.delete(fn);
+    },
+
+    onLoopChange(fn) {
+      loopListeners.add(fn);
+      return () => loopListeners.delete(fn);
     },
   };
 }

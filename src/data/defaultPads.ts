@@ -1,6 +1,6 @@
 // Default pad layouts for each grid size (source_code.jsx:142-199).
 
-import type { GridSize, PadConfig } from "../bridge/types";
+import type { GridSize, PadConfig } from "../types";
 
 const pad = (id: string, name: string, soundType: string, category: PadConfig["category"], colorKey: PadConfig["colorKey"], key: string): PadConfig => ({
   id, name, soundType, category, colorKey, key, pitchSemitones: 0, volume: 1,
