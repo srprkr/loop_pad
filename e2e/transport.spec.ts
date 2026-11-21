@@ -98,3 +98,26 @@ test("the count-in shows 3, 2, 1, then GO! left of REC, then clears", async ({ p
   await expect(page.locator("[data-countdown]")).toHaveCount(0);
   noErrors();
 });
+
+test("loop playback lights the pad that plays the sound now, even after a grid switch", async ({ page }) => {
+  const noErrors = trackPageErrors(page);
+  // A clap recorded on Q in the 4x4 grid. In 5x5, Q is Stick Click and the clap is on R.
+  await page.goto("/");
+  await page.evaluate(() =>
+    localStorage.setItem(
+      "loop-pad:v1",
+      JSON.stringify({
+        settings: { bpm: 200, metronome: false },
+        kit: { gridSize: "5x5" },
+        loop: [{ step: 0, soundType: "clap", pitchSemitones: 0, volume: 1, padKey: "Q" }],
+      }),
+    ),
+  );
+  await open(page); // reloads with that saved state
+
+  await playButton(page).click();
+  await expectFlash(page, "R", LOOP_MS + 1000);
+  await expect(pad(page, "Q")).not.toHaveAttribute("data-hit", "true");
+  await playButton(page).click();
+  noErrors();
+});

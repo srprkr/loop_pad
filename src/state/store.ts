@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { createAudioEngine } from "../audio/engine";
 import type { GridSize, KitState, PadConfig, Settings, Telemetry, UiState } from "../types";
 import { BPM_RANGE, DEFAULT_SETTINGS } from "./defaults";
+import { padForLoopHit } from "./padForLoopHit";
 import { clamp, parseSavedState, readSavedState, writeSavedState } from "./persistence";
 
 //==============================================================================
@@ -180,12 +181,11 @@ export const useTelemetryStore = create<Telemetry>(() => ({
 }));
 
 engine.onTelemetry((t) => {
-  // Loop playback flashes the pad with that key, but only if it still plays the same sound
-  // (the prototype matched on key alone, which flashed the wrong pad after a grid switch).
+  // Loop playback lights the pad that plays that sound on the current grid (padForLoopHit.ts).
   if (t.hits.length > 0) {
     const { kit } = useAppStore.getState();
     for (const hit of t.hits) {
-      const pad = kit.pads[kit.gridSize].find((p) => p.key === hit.padKey && p.soundType === hit.soundType);
+      const pad = padForLoopHit(kit.pads[kit.gridSize], hit);
       if (pad) flashPad(pad.id, LOOP_FLASH_MS);
     }
   }
