@@ -21,11 +21,6 @@ namespace
     }
 } // namespace
 
-double emphasisToQ (float emphasis) noexcept
-{
-    return std::clamp (0.5 + std::pow (static_cast<double> (emphasis) / 2.6, 1.85), 0.5, 16.0);
-}
-
 BiquadCoeffs designLowPass (double cutoffHz, double qDb, double sampleRate) noexcept
 {
     const double w0 = 2.0 * pi * clampCutoff (cutoffHz, sampleRate) / sampleRate;
@@ -58,6 +53,22 @@ BiquadCoeffs designHighPass (double cutoffHz, double qDb, double sampleRate) noe
     return c;
 }
 
+BiquadCoeffs designBandPass (double centreHz, double q, double sampleRate) noexcept
+{
+    const double w0 = 2.0 * pi * clampCutoff (centreHz, sampleRate) / sampleRate;
+    const double cosW0 = std::cos (w0);
+    const double alpha = std::sin (w0) / (2.0 * std::max (q, 1.0e-4));
+    const double a0 = 1.0 + alpha;
+
+    BiquadCoeffs c;
+    c.b0 = alpha / a0;
+    c.b1 = 0.0;
+    c.b2 = -alpha / a0;
+    c.a1 = (-2.0 * cosW0) / a0;
+    c.a2 = (1.0 - alpha) / a0;
+    return c;
+}
+
 BiquadCoeffs designOnePoleLowPass (double cutoffHz, double sampleRate) noexcept
 {
     const double k = std::tan (pi * clampCutoff (cutoffHz, sampleRate) / sampleRate);
@@ -76,50 +87,6 @@ BiquadCoeffs designOnePoleHighPass (double cutoffHz, double sampleRate) noexcept
     c.b1 = -c.b0;
     c.a1 = (k - 1.0) / (k + 1.0);
     return c;
-}
-
-FilterDesign designFilter (FilterType type, const FilterParams& params, double sampleRate) noexcept
-{
-    FilterDesign design;
-
-    const bool isHighPass = type == FilterType::HighPass;
-    const bool audible = isHighPass ? params.cutoffHz > 20.0f
-                                    : (params.cutoffHz < 20000.0f || params.resonance > 1.0f);
-
-    if (! params.enabled || ! audible || sampleRate <= 0.0)
-        return design;
-
-    const double q = emphasisToQ (params.resonance);
-    const auto biquad = [&] (double qDb)
-    {
-        return isHighPass ? designHighPass (params.cutoffHz, qDb, sampleRate)
-                          : designLowPass  (params.cutoffHz, qDb, sampleRate);
-    };
-
-    design.active = true;
-
-    switch (params.slope)
-    {
-        case FilterSlope::Db12:
-            design.numSections = 1;
-            design.sections[0] = biquad (q);
-            break;
-
-        case FilterSlope::Db18:
-            design.numSections = 2;
-            design.sections[0] = biquad (q);
-            design.sections[1] = isHighPass ? designOnePoleHighPass (params.cutoffHz, sampleRate)
-                                            : designOnePoleLowPass  (params.cutoffHz, sampleRate);
-            break;
-
-        case FilterSlope::Db24:
-            design.numSections = 2;
-            design.sections[0] = biquad (std::sqrt (q));
-            design.sections[1] = biquad (std::sqrt (q) * 1.15);
-            break;
-    }
-
-    return design;
 }
 
 } // namespace core

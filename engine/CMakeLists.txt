@@ -1,11 +1,10 @@
 # Framework-independent DSP core. Builds and tests on any platform without JUCE.
 add_library(core_engine STATIC
     src/Biquad.cpp
-    src/RegionReader.cpp
-    src/SamplerEngine.cpp
-    src/StepClock.cpp
-    src/StretchPlayer.cpp
-    src/Voice.cpp)
+    src/DrumKit.cpp
+    src/DrumVoice.cpp
+    src/LoopPadEngine.cpp
+    src/StepClock.cpp)
 
 target_include_directories(core_engine PUBLIC include)
 target_compile_features(core_engine PUBLIC cxx_std_17)

@@ -2,9 +2,9 @@
 // each TEST registers itself, main() runs them all and returns non-zero on failure.
 
 #include "core/Biquad.h"
-#include "core/Envelope.h"
-#include "core/RegionReader.h"
-#include "core/SamplerEngine.h"
+#include "core/DrumKit.h"
+#include "core/DrumVoice.h"
+#include "core/LoopPadEngine.h"
 #include "core/StepClock.h"
 
 #include <chrono>
@@ -12,7 +12,6 @@
 #include <complex>
 #include <cstdio>
 #include <functional>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -44,63 +43,25 @@ namespace
 #define CHECK_NEAR(a, b, tolerance) \
     check (std::abs ((a) - (b)) <= (tolerance), #a " ~= " #b, __FILE__, __LINE__, \
            "(" + std::to_string (a) + " vs " + std::to_string (b) + ")")
+#define CHECK_EQ(a, b) \
+    check ((a) == (b), #a " == " #b, __FILE__, __LINE__, "(" + std::to_string (a) + " vs " + std::to_string (b) + ")")
 
 //==============================================================================
 namespace
 {
     constexpr double testRate = 48000.0;
     constexpr double pi = 3.14159265358979323846;
+    constexpr int samplesPerStep120 = 6000; // a 16th at 120 BPM, 48 kHz
 
-    SamplePtr makeSine (double frequency, double seconds, double rate = testRate)
+    /** Renders one kit voice on its own. */
+    std::vector<float> renderVoice (const DrumRecipe& recipe, float pitch = 0.0f, double seconds = 2.0)
     {
-        auto sample = std::make_shared<SampleData>();
-        sample->sampleRate = rate;
-        sample->name = "sine";
-        sample->channels.resize (1);
-        const auto frames = static_cast<size_t> (seconds * rate);
-        sample->channels[0].resize (frames);
-        for (size_t i = 0; i < frames; ++i)
-            sample->channels[0][i] = static_cast<float> (0.5 * std::sin (2.0 * pi * frequency * static_cast<double> (i) / rate));
-        return sample;
-    }
-
-    struct Render
-    {
-        std::vector<float> left, right;
-    };
-
-    /** Runs the engine for `seconds`, applying events at the given absolute sample times. */
-    Render run (SamplerEngine& engine, double seconds, std::vector<std::pair<int, NoteEvent>> timedEvents = {},
-                TransportInfo transport = {}, int blockSize = 256)
-    {
-        const int total = static_cast<int> (seconds * testRate);
-        Render out;
-        out.left.resize (static_cast<size_t> (total));
-        out.right.resize (static_cast<size_t> (total));
-
-        for (int start = 0; start < total; start += blockSize)
-        {
-            const int n = std::min (blockSize, total - start);
-            std::vector<NoteEvent> events;
-            for (auto& [time, event] : timedEvents)
-                if (time >= start && time < start + n)
-                {
-                    NoteEvent e = event;
-                    e.sampleOffset = time - start;
-                    events.push_back (e);
-                }
-
-            engine.process (out.left.data() + start, out.right.data() + start, n, transport,
-                            events.data(), static_cast<int> (events.size()));
-
-            if (transport.isPlaying)
-                transport.ppqPosition += n / testRate * transport.bpm / 60.0;
-        }
+        DrumVoice voice;
+        voice.start (recipe, pitch, 1.0f, 0, testRate, 1234u, 1);
+        std::vector<float> out (static_cast<size_t> (seconds * testRate), 0.0f);
+        voice.render (out.data(), static_cast<int> (out.size()));
         return out;
     }
-
-    NoteEvent noteOn (int note, int velocity = 127) { return { NoteEvent::Type::NoteOn, 0, note, velocity }; }
-    NoteEvent noteOff (int note) { return { NoteEvent::Type::NoteOff, 0, note, 0 }; }
 
     /** Frequency estimate from upward zero crossings in [from, to). */
     double estimateFrequency (const std::vector<float>& signal, size_t from, size_t to)
@@ -122,9 +83,16 @@ namespace
     double rms (const std::vector<float>& signal, size_t from, size_t to)
     {
         double sum = 0.0;
-        for (size_t i = from; i < to; ++i)
+        for (size_t i = from; i < to && i < signal.size(); ++i)
             sum += signal[i] * signal[i];
         return std::sqrt (sum / static_cast<double> (std::max<size_t> (1, to - from)));
+    }
+
+    float peakOf (const std::vector<float>& signal)
+    {
+        float peak = 0.0f;
+        for (float s : signal) peak = std::max (peak, std::abs (s));
+        return peak;
     }
 
     /** Index of the last sample louder than threshold. */
@@ -136,214 +104,466 @@ namespace
         return 0;
     }
 
-    double magnitudeDb (const FilterDesign& design, double frequency, double rate)
+    double magnitudeDb (const BiquadCoeffs& c, double frequency, double rate)
     {
         const std::complex<double> z = std::polar (1.0, -2.0 * pi * frequency / rate);
-        std::complex<double> h = 1.0;
-        for (int s = 0; s < design.numSections; ++s)
-        {
-            const auto& c = design.sections[static_cast<size_t> (s)];
-            h *= (c.b0 + c.b1 * z + c.b2 * z * z) / (1.0 + c.a1 * z + c.a2 * z * z);
-        }
+        const auto h = (c.b0 + c.b1 * z + c.b2 * z * z) / (1.0 + c.a1 * z + c.a2 * z * z);
         return 20.0 * std::log10 (std::abs (h));
     }
 
-    SamplerEngine makeEngine (SamplePtr sample, EngineParams params = {})
+    EngineCommand command (EngineCommand::Type type, int sound = 0, char key = 0)
     {
-        SamplerEngine engine;
-        engine.prepare (testRate, 256);
-        engine.setParams (params);
-        engine.setSample (std::move (sample));
-        return engine;
+        EngineCommand c;
+        c.type = type;
+        c.sound = sound;
+        c.padKey = key;
+        return c;
     }
 
-    EngineParams plainParams()
+    EngineCommand trigger (const char* soundId, char key = '1')
     {
-        EngineParams p;
-        p.tempoSync = false;
-        p.preserveSpeed = false;
-        p.decaySec = 0.01f;
-        p.sustainLevel = 1.0f;
-        p.releaseSec = 0.05f;
-        return p;
+        return command (EngineCommand::Type::Trigger, DrumKit::findSound (soundId), key);
     }
+
+    /** Drives an engine block by block, delivering commands at absolute sample times. */
+    struct Harness
+    {
+        LoopPadEngine engine;
+        EngineParams params;
+        TransportInfo transport;
+        std::vector<float> left, right;
+        std::vector<std::pair<int64_t, EngineEvent>> events; // absolute block start, event
+        int64_t now = 0;
+        int blockSize = 256;
+
+        Harness()
+        {
+            params.metronome = false;
+            engine.setParams (params);
+            engine.prepare (testRate, 512);
+        }
+
+        void setParams (const EngineParams& p) { params = p; engine.setParams (p); }
+
+        /** Runs until absolute time `until`, applying commands at their times. */
+        void runTo (int64_t until, std::vector<std::pair<int64_t, EngineCommand>> commands = {})
+        {
+            while (now < until)
+            {
+                const int n = static_cast<int> (std::min<int64_t> (blockSize, until - now));
+                std::vector<EngineCommand> block;
+                for (auto& [time, c] : commands)
+                    if (time >= now && time < now + n)
+                    {
+                        auto copy = c;
+                        copy.sampleOffset = static_cast<int> (time - now);
+                        block.push_back (copy);
+                    }
+
+                std::vector<float> l (static_cast<size_t> (n)), r (static_cast<size_t> (n));
+                engine.process (l.data(), r.data(), n, transport, block.data(), static_cast<int> (block.size()));
+                left.insert (left.end(), l.begin(), l.end());
+                right.insert (right.end(), r.begin(), r.end());
+                for (int e = 0; e < engine.getNumEvents(); ++e)
+                    events.push_back ({ now, engine.getEvents()[e] });
+                now += n;
+            }
+        }
+
+        void at (int64_t time, EngineCommand c) { runTo (time + 1, { { time, c } }); }
+
+        int countEvents (EngineEvent::Type type) const
+        {
+            int n = 0;
+            for (auto& [time, e] : events) n += e.type == type ? 1 : 0;
+            return n;
+        }
+    };
+
+    /** Absolute sample where step `s` of the first recording pass falls, after REC at time 0. */
+    int64_t recordStepTime (double s) { return static_cast<int64_t> ((s + LoopPadEngine::countInSteps) * samplesPerStep120); }
 } // namespace
 
 //==============================================================================
-TEST (filtersPassAndRejectTheRightBands)
+// Filters
+
+TEST (filtersMatchWebAudioResponses)
 {
-    for (auto slope : { FilterSlope::Db12, FilterSlope::Db18, FilterSlope::Db24 })
+    const auto lp = designLowPass (1000.0, 1.0, testRate);
+    const auto hp = designHighPass (1000.0, 1.0, testRate);
+    const auto bp = designBandPass (1000.0, 2.0, testRate);
+
+    CHECK_NEAR (magnitudeDb (lp, 20.0, testRate), 0.0, 0.1);
+    CHECK_NEAR (magnitudeDb (lp, 1000.0, testRate), 1.0, 0.05); // Web Audio: Q in dB is the gain at cutoff
+    CHECK (magnitudeDb (lp, 8000.0, testRate) < -30.0);
+    CHECK_NEAR (magnitudeDb (hp, 15000.0, testRate), 0.0, 0.1);
+    CHECK (magnitudeDb (hp, 125.0, testRate) < -30.0);
+    CHECK_NEAR (magnitudeDb (bp, 1000.0, testRate), 0.0, 0.01); // band-pass: 0 dB at the centre
+    CHECK (magnitudeDb (bp, 250.0, testRate) < -10.0);
+    CHECK (magnitudeDb (bp, 4000.0, testRate) < -10.0);
+}
+
+//==============================================================================
+// Kit
+
+TEST (kitMatchesTheUiList)
+{
+    CHECK_EQ (DrumKit::numSounds(), 25);
+    CHECK_EQ (DrumKit::findSound ("punch_kick"), 0);
+    CHECK_EQ (DrumKit::findSound ("noise_drop"), 24);
+    CHECK_EQ (DrumKit::findSound ("no_such_sound"), -1);
+}
+
+TEST (everyKitSoundIsAudibleFiniteAndEndsOnTime)
+{
+    for (int i = 0; i < DrumKit::numSounds(); ++i)
     {
-        const auto lowPass = designFilter (FilterType::LowPass, { true, 1000.0f, 1.0f, slope }, testRate);
-        const auto highPass = designFilter (FilterType::HighPass, { true, 1000.0f, 1.0f, slope }, testRate);
+        const auto& recipe = DrumKit::sound (i);
+        const auto out = renderVoice (recipe);
 
-        CHECK (lowPass.active && highPass.active);
-        CHECK_NEAR (magnitudeDb (lowPass, 20.0, testRate), 0.0, 1.5);
-        CHECK (magnitudeDb (lowPass, 8000.0, testRate) < -30.0);
-        CHECK_NEAR (magnitudeDb (highPass, 15000.0, testRate), 0.0, 1.5);
-        CHECK (magnitudeDb (highPass, 125.0, testRate) < -30.0);
-    }
+        float longestStop = 0.0f;
+        for (int l = 0; l < recipe.numLayers; ++l)
+            longestStop = std::max (longestStop, recipe.layers[static_cast<size_t> (l)].offset + recipe.layers[static_cast<size_t> (l)].stopTime);
 
-    // Steeper slopes attenuate more two octaves above the cutoff.
-    const auto at = [] (FilterSlope s) { return magnitudeDb (designFilter (FilterType::LowPass, { true, 1000.0f, 1.0f, s }, testRate), 4000.0, testRate); };
-    CHECK (at (FilterSlope::Db12) > at (FilterSlope::Db18));
-    CHECK (at (FilterSlope::Db18) > at (FilterSlope::Db24));
-}
+        bool finite = true;
+        for (float s : out) finite = finite && std::isfinite (s);
 
-TEST (inaudibleFiltersAreSkipped)
-{
-    CHECK (! designFilter (FilterType::HighPass, { true, 20.0f, 1.0f, FilterSlope::Db12 }, testRate).active);
-    CHECK (! designFilter (FilterType::LowPass, { true, 20000.0f, 1.0f, FilterSlope::Db24 }, testRate).active);
-    CHECK (designFilter (FilterType::LowPass, { true, 20000.0f, 4.0f, FilterSlope::Db24 }, testRate).active);
-    CHECK (! designFilter (FilterType::LowPass, { false, 500.0f, 4.0f, FilterSlope::Db24 }, testRate).active);
-}
+        const auto peak = peakOf (out);
+        const auto end = lastAudibleSample (out, 1.0e-6f);
+        if (! (finite && peak > 0.05f && peak < 2.0f && end <= static_cast<size_t> (longestStop * testRate) + 1))
+            std::printf ("    %s: peak %.3f, ends at %.3f s (stop %.3f s)\n", recipe.id, peak, end / testRate, longestStop);
 
-TEST (envelopeFollowsLinearSegments)
-{
-    LinearAdsr env;
-    env.setSampleRate (1000.0);
-    env.noteOn (0.1f, 0.1f, 0.5f);
-
-    float level = 0.0f;
-    for (int i = 0; i < 50; ++i) level = env.next();
-    CHECK_NEAR (level, 0.5f, 0.02f);                 // halfway up the attack
-    for (int i = 0; i < 100; ++i) level = env.next();
-    CHECK_NEAR (level, 0.75f, 0.02f);                // halfway down the decay
-    for (int i = 0; i < 100; ++i) level = env.next();
-    CHECK (env.getStage() == LinearAdsr::Stage::Sustain);
-    CHECK_NEAR (level, 0.5f, 1.0e-4f);
-
-    env.release (0.2f);
-    for (int i = 0; i < 100; ++i) level = env.next();
-    CHECK_NEAR (level, 0.25f, 0.02f);
-    for (int i = 0; i < 110; ++i) env.next();
-    CHECK (! env.isActive());
-}
-
-TEST (loopSeamIsContinuous)
-{
-    // A ramp makes any discontinuity obvious.
-    SampleData ramp;
-    ramp.sampleRate = testRate;
-    ramp.channels.resize (1);
-    for (int i = 0; i < 48000; ++i)
-        ramp.channels[0].push_back (static_cast<float> (std::sin (i * 0.01)));
-
-    for (double loopStart : { 0.0, 10000.0 })
-    {
-        PlaybackRegion region;
-        region.start = 0.0;
-        region.end = 47999.0;
-        region.looping = true;
-        region.loopStart = loopStart;
-        region.loopEnd = 30000.0;
-        region.crossfade = 2000.0;
-
-        const RegionReader reader (ramp, region);
-        float previous = 0.0f, l, r;
-        float largestStep = 0.0f;
-        for (double v = 0.0; v < 200000.0; v += 1.0)
-        {
-            reader.read (v, l, r);
-            if (v > 0.0)
-                largestStep = std::max (largestStep, std::abs (l - previous));
-            previous = l;
-        }
-        // sin(i * 0.01) changes by at most ~0.01 per sample; a click would be far larger.
-        CHECK (largestStep < 0.05f);
+        CHECK (finite);
+        CHECK (peak > 0.05f);  // audible
+        CHECK (peak < 2.0f);   // no runaway filters
+        CHECK (end <= static_cast<size_t> (longestStop * testRate) + 1);
     }
 }
 
-TEST (oneShotPlaysTheRegionAtRootPitch)
+TEST (pitchScalesTheRecipeFrequencies)
 {
-    auto engine = makeEngine (makeSine (440.0, 1.0), plainParams());
-    const auto out = run (engine, 1.5, { { 0, noteOn (60) } });
-
-    CHECK_NEAR (estimateFrequency (out.left, 4800, 40000), 440.0, 2.0);
-    // Mono sources are panned centre with the equal-power law (-3 dB per side).
-    CHECK_NEAR (rms (out.left, 4800, 40000), 0.5 / std::sqrt (2.0) * std::sqrt (0.5), 0.02);
-    CHECK_NEAR (static_cast<double> (lastAudibleSample (out.left)), 48000.0, 400.0);
+    // Agogo: a constant 1150 Hz triangle. +12 semitones doubles it; -12 halves it.
+    const auto& agogo = DrumKit::sound (DrumKit::findSound ("agogo"));
+    const size_t from = 100, to = static_cast<size_t> (0.15 * testRate);
+    CHECK_NEAR (estimateFrequency (renderVoice (agogo, 0.0f), from, to), 1150.0, 5.0);
+    CHECK_NEAR (estimateFrequency (renderVoice (agogo, 12.0f), from, to), 2300.0, 10.0);
+    CHECK_NEAR (estimateFrequency (renderVoice (agogo, -12.0f), from, to), 575.0, 5.0);
 }
 
-TEST (keysTransposeAndChangeSpeedWithoutPreserveSpeed)
+TEST (pitchSweepsFollowTheRecipe)
 {
-    auto engine = makeEngine (makeSine (440.0, 1.0), plainParams());
-    const auto out = run (engine, 1.5, { { 0, noteOn (72) } });
-
-    CHECK_NEAR (estimateFrequency (out.left, 2000, 20000), 880.0, 4.0);
-    CHECK_NEAR (static_cast<double> (lastAudibleSample (out.left)), 24000.0, 400.0); // twice as fast
+    // Sub 808: 120 Hz falling to 42 Hz over 120 ms, then constant.
+    const auto out = renderVoice (DrumKit::sound (DrumKit::findSound ("sub_808")));
+    const double tail = estimateFrequency (out, static_cast<size_t> (0.2 * testRate), static_cast<size_t> (0.6 * testRate));
+    CHECK_NEAR (tail, 42.0, 1.5);
 }
 
-TEST (preserveSpeedKeepsDurationWhileTransposing)
+TEST (hatDecaysShortenWithPitch)
 {
-    auto params = plainParams();
-    params.preserveSpeed = true;
+    // Open hat: decay 0.38 s / max(0.5, pitch). Up an octave it decays twice as fast.
+    const auto& hat = DrumKit::sound (DrumKit::findSound ("open_hat"));
+    const auto normal = renderVoice (hat, 0.0f);
+    const auto high = renderVoice (hat, 12.0f);
+    const size_t at = static_cast<size_t> (0.15 * testRate);
+    CHECK (rms (high, at, at + 2400) < 0.5 * rms (normal, at, at + 2400));
+}
 
-    for (int note : { 72, 53 })
+TEST (padVolumeScalesTheVoice)
+{
+    const auto& kick = DrumKit::sound (DrumKit::findSound ("punch_kick"));
+    DrumVoice a, b;
+    a.start (kick, 0.0f, 1.0f, 0, testRate, 7u, 1);
+    b.start (kick, 0.0f, 0.5f, 0, testRate, 7u, 2);
+    std::vector<float> outA (4800), outB (4800);
+    a.render (outA.data(), 4800);
+    b.render (outB.data(), 4800);
+    CHECK_NEAR (peakOf (outB) / peakOf (outA), 0.5f, 1.0e-4f);
+}
+
+//==============================================================================
+// Engine: output
+
+TEST (silentUntilSomethingPlays)
+{
+    Harness h;
+    h.runTo (48000);
+    CHECK (peakOf (h.left) == 0.0f);
+}
+
+TEST (triggersStartAtTheirSampleOffset)
+{
+    Harness h;
+    h.runTo (1000, { { 700, trigger ("punch_kick") } });
+    size_t first = 0;
+    while (first < h.left.size() && h.left[first] == 0.0f) ++first;
+    // Sine starts at 0, so the first non-zero sample is one after the trigger.
+    CHECK (first >= 700 && first <= 701);
+}
+
+TEST (masterVolumeAndMute)
+{
+    auto level = [] (float volume, bool mute)
     {
-        auto engine = makeEngine (makeSine (440.0, 1.0), params);
-        const auto out = run (engine, 1.5, { { 0, noteOn (note) } });
-        const double expected = 440.0 * std::pow (2.0, (note - 60) / 12.0);
+        Harness h;
+        auto p = h.params;
+        p.masterVolume = volume;
+        p.mute = mute;
+        h.setParams (p);
+        h.engine.prepare (testRate, 512); // start the smoother at the target
+        h.runTo (4800, { { 0, trigger ("sub_808") } });
+        return rms (h.left, 0, 4800);
+    };
 
-        CHECK_NEAR (estimateFrequency (out.left, 4800, 40000), expected, expected * 0.01);
-        CHECK_NEAR (static_cast<double> (lastAudibleSample (out.left)), 48000.0, 2500.0);
+    const double full = level (1.0f, false);
+    CHECK (full > 0.0);
+    CHECK_NEAR (level (0.5f, false) / full, 0.5, 0.02);
+    CHECK (level (1.0f, true) < 1.0e-6);
+}
+
+TEST (outputStaysWithinFullScale)
+{
+    // Ten kicks at 130% on top of each other would clip without the soft clipper.
+    Harness h;
+    auto p = h.params;
+    p.masterVolume = 1.0f;
+    h.setParams (p);
+    std::vector<std::pair<int64_t, EngineCommand>> hits;
+    for (int i = 0; i < 10; ++i)
+    {
+        auto c = trigger (i % 2 ? "sub_808" : "punch_kick");
+        c.volume = 1.3f;
+        hits.push_back ({ i, c });
     }
+    h.runTo (24000, hits);
+    CHECK (peakOf (h.left) <= 1.0f);
+    CHECK (peakOf (h.left) > 0.8f);
+    CHECK (h.left == h.right);
 }
 
-TEST (tempoSyncStretchesToHostTempo)
+TEST (voicesAreStolenWhenThePoolIsFull)
 {
-    auto params = plainParams();
-    params.preserveSpeed = true;
-    params.tempoSync = true;
-    params.sampleBpm = 120.0f;
-
-    TransportInfo transport;
-    transport.bpm = 60.0; // half the sample tempo -> twice as long, same pitch
-
-    auto engine = makeEngine (makeSine (440.0, 1.0), params);
-    const auto out = run (engine, 2.5, { { 0, noteOn (60) } }, transport);
-
-    CHECK_NEAR (estimateFrequency (out.left, 4800, 80000), 440.0, 5.0);
-    CHECK_NEAR (static_cast<double> (lastAudibleSample (out.left)), 96000.0, 3000.0);
-}
-
-TEST (loopModeSustainsWhileHeldAndReleasesOnNoteOff)
-{
-    auto params = plainParams();
-    params.playbackMode = PlaybackMode::Loop;
-    params.loopStartPos = 0.25f;
-    params.loopEndPos = 0.75f;
-
-    auto engine = makeEngine (makeSine (440.0, 0.5), params);
-    const auto out = run (engine, 3.0, { { 0, noteOn (60) }, { 96000, noteOff (60) } });
-
-    CHECK (rms (out.left, 80000, 90000) > 0.1);                 // still sounding long after the sample's end
-    CHECK (lastAudibleSample (out.left) < 96000 + 0.06 * testRate); // 50 ms release
-}
-
-TEST (velocityScalesLevel)
-{
-    auto loud = makeEngine (makeSine (440.0, 1.0), plainParams());
-    auto soft = makeEngine (makeSine (440.0, 1.0), plainParams());
-    const auto a = run (loud, 0.5, { { 0, noteOn (60, 127) } });
-    const auto b = run (soft, 0.5, { { 0, noteOn (60, 64) } });
-
-    CHECK_NEAR (rms (b.left, 4800, 20000) / rms (a.left, 4800, 20000), std::pow (64.0 / 127.0, 1.25), 0.01);
-}
-
-TEST (extremeFilterSettingsStayFinite)
-{
-    auto params = plainParams();
-    params.lowPass = { true, 20.0f, 10.0f, FilterSlope::Db24 };
-    params.highPass = { true, 19000.0f, 10.0f, FilterSlope::Db18 };
-
-    auto engine = makeEngine (makeSine (440.0, 1.0), params);
-    const auto out = run (engine, 1.0, { { 0, noteOn (60) } });
+    Harness h;
+    std::vector<std::pair<int64_t, EngineCommand>> hits;
+    for (int i = 0; i < 100; ++i)
+        hits.push_back ({ i * 10, trigger ("crash") });
+    h.runTo (48000, hits);
 
     bool finite = true;
-    for (float s : out.left) finite = finite && std::isfinite (s);
+    for (float s : h.left) finite = finite && std::isfinite (s);
     CHECK (finite);
+    CHECK (peakOf (h.left) > 0.1f);
 }
+
+TEST (previewDoesNotRecord)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::Record));
+    h.runTo (recordStepTime (2), { { recordStepTime (2) - 1, command (EngineCommand::Type::Preview, DrumKit::findSound ("clap")) } });
+    CHECK_EQ (h.engine.getLoop().count, 0);
+}
+
+//==============================================================================
+// Engine: transport
+
+TEST (recordCountsInThreeBeatsThenRecordsFourBars)
+{
+    Harness h;
+    CHECK (h.engine.getMode() == TransportMode::Idle);
+    h.at (0, command (EngineCommand::Type::Record));
+    CHECK (h.engine.getMode() == TransportMode::CountIn);
+
+    h.runTo (recordStepTime (0) - 1);
+    CHECK (h.engine.getMode() == TransportMode::CountIn);
+    h.runTo (recordStepTime (0) + 1);
+    CHECK (h.engine.getMode() == TransportMode::Recording);
+
+    h.runTo (recordStepTime (64) - 1);
+    CHECK (h.engine.getMode() == TransportMode::Recording);
+    h.runTo (recordStepTime (64) + 1);
+    CHECK (h.engine.getMode() == TransportMode::Playing); // loops straight into playback
+
+    CHECK_EQ (h.engine.getTelemetry().recordBeat, 16u);   // one per quarter note of the take
+}
+
+TEST (metronomeClicksOnBeatsWithCountIn)
+{
+    Harness h;
+    auto p = h.params;
+    p.metronome = true;
+    h.setParams (p);
+    h.at (0, command (EngineCommand::Type::Record));
+    h.runTo (recordStepTime (8));
+
+    // Clicks at the three count-in beats and at steps 0 and 4.
+    for (double step : { -12.0, -8.0, -4.0, 0.0, 4.0 })
+    {
+        const auto t = static_cast<size_t> (recordStepTime (step));
+        CHECK (rms (h.left, t, t + 1000) > 0.01);
+        CHECK (rms (h.left, t + 3000, t + 5000) < 1.0e-4); // silent between clicks
+    }
+}
+
+TEST (metronomeOffIsSilent)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::Record));
+    h.runTo (recordStepTime (16));
+    CHECK (peakOf (h.left) == 0.0f);
+}
+
+TEST (hitsSnapToTheNearestSixteenth)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::Record));
+    h.runTo (recordStepTime (64) - 1, {
+        { recordStepTime (-0.6), trigger ("rimshot", 'A') },    // too early: dropped
+        { recordStepTime (-0.4), trigger ("clap", 'B') },       // last half step of the count-in: step 0
+        { recordStepTime (10.4), trigger ("closed_hat", 'C') }, // -> 10
+        { recordStepTime (10.6), trigger ("open_hat", 'D') },   // -> 11
+        { recordStepTime (63.7), trigger ("crash", 'E') },      // wraps -> 0
+    });
+
+    const auto& loop = h.engine.getLoop();
+    CHECK_EQ (loop.count, 4);
+    auto stepOf = [&] (char key)
+    {
+        for (int i = 0; i < loop.count; ++i)
+            if (loop.notes[static_cast<size_t> (i)].padKey == key)
+                return loop.notes[static_cast<size_t> (i)].step;
+        return -1;
+    };
+    CHECK_EQ (stepOf ('A'), -1);
+    CHECK_EQ (stepOf ('B'), 0);
+    CHECK_EQ (stepOf ('C'), 10);
+    CHECK_EQ (stepOf ('D'), 11);
+    CHECK_EQ (stepOf ('E'), 0);
+}
+
+TEST (sameSoundOnTheSameStepIsReplaced)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::Record));
+    auto soft = trigger ("clap");
+    soft.volume = 0.3f;
+    h.runTo (recordStepTime (8), { { recordStepTime (3.9), trigger ("clap") }, { recordStepTime (4.1), soft } });
+    CHECK_EQ (h.engine.getLoop().count, 1);
+    CHECK_NEAR (h.engine.getLoop().notes[0].volume, 0.3f, 1.0e-6f); // the later hit wins
+}
+
+TEST (recordedHitsPlayBackEveryLoopAtTheirStep)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::Record));
+    h.runTo (recordStepTime (64) + 64 * samplesPerStep120 * 2, { { recordStepTime (4), trigger ("cowbell", 'R') } });
+
+    std::vector<int64_t> hitBlocks;
+    for (auto& [time, e] : h.events)
+        if (e.type == EngineEvent::Type::LoopHit)
+        {
+            CHECK (e.note.padKey == 'R');
+            hitBlocks.push_back (time);
+        }
+
+    CHECK_EQ (hitBlocks.size(), size_t (2));
+    if (hitBlocks.size() == 2)
+    {
+        // Within the block that contains step 4 of the next pass, and one loop apart.
+        const int64_t expected = recordStepTime (64 + 4);
+        CHECK (hitBlocks[0] <= expected && expected < hitBlocks[0] + h.blockSize);
+        CHECK_EQ (hitBlocks[1] - hitBlocks[0], int64_t (64 * samplesPerStep120));
+    }
+
+    // The voice starts exactly on the step: silence before it in the second pass.
+    const auto t = static_cast<size_t> (recordStepTime (64 + 4));
+    CHECK (rms (h.left, t - 2000, t - 1) < 1.0e-6);
+    CHECK (rms (h.left, t, t + 2000) > 0.01);
+}
+
+TEST (aNewTakeReplacesTheLoopOnlyOnceRecordingStarts)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::Record));
+    h.runTo (recordStepTime (64) + 10, { { recordStepTime (0), trigger ("clap") } });
+    CHECK_EQ (h.engine.getLoop().count, 1);
+
+    // REC again (from playback) -> count-in; stopping during the count-in keeps the old loop.
+    const auto t0 = h.now;
+    h.at (t0, command (EngineCommand::Type::Record));
+    CHECK (h.engine.getMode() == TransportMode::CountIn);
+    h.at (t0 + 1000, command (EngineCommand::Type::Record));
+    CHECK (h.engine.getMode() == TransportMode::Idle);
+    CHECK_EQ (h.engine.getLoop().count, 1);
+
+    // A full take with no hits clears it.
+    const auto t1 = h.now;
+    h.at (t1, command (EngineCommand::Type::Record));
+    h.runTo (t1 + recordStepTime (1));
+    CHECK_EQ (h.engine.getLoop().count, 0);
+    CHECK_EQ (h.countEvents (EngineEvent::Type::LoopCleared), 2);
+}
+
+TEST (playTogglesAndAlwaysStartsFromStepZero)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::TogglePlay));
+    CHECK (h.engine.getMode() == TransportMode::Playing);
+    h.runTo (10 * samplesPerStep120 + 10);
+    CHECK_EQ (h.engine.getTelemetry().step, 10);
+    h.at (h.now, command (EngineCommand::Type::TogglePlay));
+    CHECK (h.engine.getMode() == TransportMode::Idle);
+    h.at (h.now, command (EngineCommand::Type::TogglePlay));
+    h.runTo (h.now + 100);
+    CHECK_EQ (h.engine.getTelemetry().step, 0);
+}
+
+TEST (playingDoesNotRecord)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::TogglePlay));
+    h.runTo (20000, { { 5000, trigger ("clap") } });
+    CHECK_EQ (h.engine.getLoop().count, 0);
+}
+
+TEST (tempoChangesMidLoopKeepThePosition)
+{
+    Harness h;
+    h.at (0, command (EngineCommand::Type::TogglePlay));
+    h.runTo (8 * samplesPerStep120);
+    CHECK_NEAR (h.engine.getPosition(), 8.0, 1.0e-6);
+
+    auto p = h.params;
+    p.bpm = 60.0f; // half speed: a step now takes 12000 samples
+    h.setParams (p);
+    h.runTo (h.now + 4 * 12000);
+    CHECK_NEAR (h.engine.getPosition(), 12.0, 1.0e-6);
+}
+
+TEST (hostTempoOverridesTheBpmParameterWhileTheHostPlays)
+{
+    Harness h;
+    h.transport.isPlaying = true;
+    h.transport.bpm = 240.0;
+    h.at (0, command (EngineCommand::Type::TogglePlay));
+    h.runTo (8 * 3000);
+    CHECK_NEAR (h.engine.getPosition(), 8.0, 1.0e-6);
+    CHECK (h.engine.getTelemetry().hostSynced);
+    CHECK_NEAR (h.engine.getTelemetry().bpm, 240.0, 1.0e-9);
+}
+
+TEST (restoredLoopPlaysBack)
+{
+    Harness h;
+    Loop loop;
+    loop.add ({ 0, DrumKit::findSound ("punch_kick"), 0.0f, 1.0f, 'Z' });
+    h.engine.setLoop (loop);
+    h.at (0, command (EngineCommand::Type::TogglePlay));
+    h.runTo (1000);
+    CHECK_EQ (h.countEvents (EngineEvent::Type::LoopHit), 1);
+    CHECK (rms (h.left, 0, 1000) > 0.01);
+}
+
+//==============================================================================
+// Step clock (kept as a building block)
 
 TEST (freeRunningClockTicksImmediatelyThenEvenly)
 {
@@ -403,23 +623,21 @@ TEST (hostSyncedClockFollowsSongPosition)
     CHECK_NEAR (tickBeats.front(), 4.0, 1.0e-9); // waits for the grid, doesn't fire at 3.9
 }
 
-TEST (sixteenStretchedVoicesRunFasterThanRealTime)
-{
-    auto params = plainParams();
-    params.preserveSpeed = true;
-    params.playbackMode = PlaybackMode::Loop;
-    params.lowPass = { true, 3000.0f, 3.0f, FilterSlope::Db24 };
+//==============================================================================
+// Performance
 
-    auto engine = makeEngine (makeSine (220.0, 4.0), params);
-    std::vector<std::pair<int, NoteEvent>> chord;
-    for (int i = 0; i < 16; ++i)
-        chord.push_back ({ 0, noteOn (48 + i * 2) });
+TEST (thirtyTwoVoicesRunFasterThanRealTime)
+{
+    Harness h;
+    std::vector<std::pair<int64_t, EngineCommand>> hits;
+    for (int i = 0; i < 4 * 32; ++i)
+        hits.push_back ({ i * 1500, trigger (DrumKit::sound (i % DrumKit::numSounds()).id) });
 
     const auto begin = std::chrono::steady_clock::now();
-    run (engine, 4.0, chord);
+    h.runTo (static_cast<int64_t> (4.0 * testRate), hits);
     const double elapsed = std::chrono::duration<double> (std::chrono::steady_clock::now() - begin).count();
 
-    std::printf ("    16 stretched voices: %.1f%% of real time\n", elapsed / 4.0 * 100.0);
+    std::printf ("    4 s of dense hits: %.1f%% of real time\n", elapsed / 4.0 * 100.0);
     CHECK (elapsed < 4.0); // generous: must at least keep up, even in debug builds
 }
 
