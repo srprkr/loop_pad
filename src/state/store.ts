@@ -6,63 +6,14 @@
 
 import { create } from "zustand";
 import { createAudioEngine } from "../audio/engine";
-import type { GridSize, KitState, LoopNote, PadConfig, Settings, Telemetry, UiState } from "../types";
-import { findSound } from "../data/kit";
-import { BPM_RANGE, DEFAULT_KIT, DEFAULT_SETTINGS, DEFAULT_UI_STATE } from "./defaults";
+import type { GridSize, KitState, PadConfig, Settings, Telemetry, UiState } from "../types";
+import { BPM_RANGE, DEFAULT_SETTINGS } from "./defaults";
+import { clamp, parseSavedState, readSavedState, writeSavedState } from "./persistence";
 
 //==============================================================================
 // Persistence
 
-const STORAGE_KEY = "loop-pad:v1";
-
-interface SavedState {
-  settings: Settings;
-  kit: KitState;
-  ui: UiState;
-  loop: LoopNote[];
-}
-
-const clamp = (v: unknown, min: number, max: number, fallback: number) =>
-  typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
-
-/** Reads the saved state, keeping only what is valid and filling in the rest with defaults. */
-function loadSavedState(): SavedState {
-  let saved: Partial<SavedState> = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") ?? {};
-  } catch {
-    // Unreadable: start fresh.
-  }
-
-  const s = saved.settings ?? DEFAULT_SETTINGS;
-  const settings: Settings = {
-    volume: clamp(s.volume, 0, 1, DEFAULT_SETTINGS.volume),
-    muted: typeof s.muted === "boolean" ? s.muted : DEFAULT_SETTINGS.muted,
-    bpm: Math.round(clamp(s.bpm, BPM_RANGE.min, BPM_RANGE.max, DEFAULT_SETTINGS.bpm)),
-    metronome: typeof s.metronome === "boolean" ? s.metronome : DEFAULT_SETTINGS.metronome,
-  };
-
-  const pads = { ...DEFAULT_KIT.pads };
-  for (const size of Object.keys(pads) as GridSize[]) {
-    const list = saved.kit?.pads?.[size];
-    if (Array.isArray(list) && list.length === DEFAULT_KIT.pads[size].length && list.every((p) => findSound(p?.soundType)))
-      pads[size] = list;
-  }
-  const gridSize = saved.kit?.gridSize && pads[saved.kit.gridSize] ? saved.kit.gridSize : DEFAULT_KIT.gridSize;
-
-  const ui: UiState = {
-    inspectorOpen: saved.ui?.inspectorOpen === true,
-    selectedPad: { ...DEFAULT_UI_STATE.selectedPad, ...(saved.ui?.selectedPad ?? {}) },
-  };
-
-  const loop = Array.isArray(saved.loop)
-    ? saved.loop.filter((n) => Number.isInteger(n?.step) && n.step >= 0 && n.step < 64 && findSound(n.soundType))
-    : [];
-
-  return { settings, kit: { gridSize, pads }, ui, loop };
-}
-
-const initial = loadSavedState();
+const initial = parseSavedState(readSavedState());
 const engine = createAudioEngine(initial.settings);
 engine.setLoop(initial.loop);
 
@@ -71,12 +22,7 @@ function scheduleSave() {
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
     const { settings, kit, ui } = useAppStore.getState();
-    const state: SavedState = { settings, kit, ui, loop: engine.getLoop() };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Storage full or disabled (private browsing): keep working without saving.
-    }
+    writeSavedState({ settings, kit, ui, loop: engine.getLoop() });
   }, 300);
 }
 engine.onLoopChange(scheduleSave);

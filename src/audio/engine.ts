@@ -10,11 +10,10 @@
 // Timing uses Web Audio's clock with a 100 ms look-ahead scheduler, so hits and clicks land
 // exactly on their steps even though the scheduler itself runs on a timer.
 
-import type { LoopNote, PadHit, Settings, Telemetry, TransportMode } from "../types";
+import type { LoopNote, PadHit, Settings, Telemetry } from "../types";
+import { actionsForStep, addHit, displayStep, modeAt, quantizeHit, startStep } from "./transport";
 import { createNoiseBuffer, playMetronomeClick, triggerSound } from "./webSynth";
 
-const LOOP_STEPS = 64;
-const COUNT_IN_STEPS = 12; // 3 beats
 const LOOKAHEAD_SEC = 0.1;
 const SCHEDULE_INTERVAL_MS = 25;
 const TELEMETRY_INTERVAL_MS = 33;
@@ -77,14 +76,8 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
   const secondsPerStep = () => 60 / settings.bpm / 4;
   const positionAt = (time: number) => nextStep - (nextStepTime - time) / secondsPerStep();
-  const currentMode = () => (running && audio ? modeAt(positionAt(audio.ctx.currentTime)) : "idle");
-
-  function modeAt(position: number): TransportMode {
-    if (!running) return "idle";
-    if (recordRun && position < 0) return "countIn";
-    if (recordRun && position < LOOP_STEPS) return "recording";
-    return "playing";
-  }
+  const run = () => ({ running, recordRun });
+  const currentMode = () => (running && audio ? modeAt(run(), positionAt(audio.ctx.currentTime)) : "idle");
 
   function clearLoopForNewTake() {
     if (loopClearedForTake) return;
@@ -98,7 +91,7 @@ export function createAudioEngine(initial: Settings): AudioEngine {
     running = true;
     recordRun = withRecording;
     loopClearedForTake = false;
-    nextStep = withRecording ? -COUNT_IN_STEPS : 0;
+    nextStep = startStep(withRecording);
     nextStepTime = ctx.currentTime + 0.05;
     timedEvents = [];
   }
@@ -115,26 +108,17 @@ export function createAudioEngine(initial: Settings): AudioEngine {
     while (nextStepTime < ctx.currentTime + LOOKAHEAD_SEC) {
       const step = nextStep;
       const time = nextStepTime;
+      const actions = actionsForStep(recordRun, step, settings.metronome);
 
-      if (step < 0) {
-        if (step % 4 === 0 && settings.metronome) playMetronomeClick(ctx, master, time, true, step === -COUNT_IN_STEPS);
-      } else {
-        const loopStep = step % LOOP_STEPS;
-        const recordingPass = recordRun && step < LOOP_STEPS;
+      if (actions.click) playMetronomeClick(ctx, master, time, actions.click.countIn, actions.click.accent);
+      if (actions.recordBeat) timedEvents.push({ time, kind: "beat" });
+      if (actions.startsTake) clearLoopForNewTake();
 
-        if (loopStep % 4 === 0) {
-          if (settings.metronome) playMetronomeClick(ctx, master, time, false, loopStep % 16 === 0);
-          if (recordingPass) timedEvents.push({ time, kind: "beat" });
-        }
-
-        if (recordingPass) {
-          if (step === 0) clearLoopForNewTake();
-        } else {
-          for (const note of loop) {
-            if (note.step !== loopStep) continue;
-            triggerSound(ctx, master, noise, note.soundType, note.pitchSemitones, note.volume, time);
-            timedEvents.push({ time, kind: "hit", hit: { padKey: note.padKey, soundType: note.soundType } });
-          }
+      if (actions.playStep !== null) {
+        for (const note of loop) {
+          if (note.step !== actions.playStep) continue;
+          triggerSound(ctx, master, noise, note.soundType, note.pitchSemitones, note.volume, time);
+          timedEvents.push({ time, kind: "hit", hit: { padKey: note.padKey, soundType: note.soundType } });
         }
       }
 
@@ -144,15 +128,11 @@ export function createAudioEngine(initial: Settings): AudioEngine {
   }
 
   function recordHit(soundType: string, pitchSemitones: number, volume: number, padKey: string, time: number) {
-    if (!running || !recordRun) return;
-    const position = positionAt(time);
-    if (position < -0.5 || position >= LOOP_STEPS) return;
+    const step = quantizeHit(run(), positionAt(time));
+    if (step === null) return;
 
-    const step = Math.max(0, Math.round(position)) % LOOP_STEPS;
     clearLoopForNewTake();
-    // The same sound on the same step replaces the earlier hit (source_code.jsx:880-884).
-    loop = loop.filter((n) => !(n.step === step && n.soundType === soundType));
-    loop.push({ step, soundType, pitchSemitones, volume, padKey });
+    loop = addHit(loop, { step, soundType, pitchSemitones, volume, padKey });
     loopChanged();
   }
 
@@ -167,9 +147,8 @@ export function createAudioEngine(initial: Settings): AudioEngine {
     });
 
     const position = running ? positionAt(now) : 0;
-    const mode = modeAt(position);
-    const step = mode === "idle" ? 0 : mode === "countIn" ? Math.floor(position) : Math.floor(position) % LOOP_STEPS;
-    return { mode, step, recordBeat, hits, loopLength: loop.length };
+    const mode = modeAt(run(), position);
+    return { mode, step: displayStep(mode, position), recordBeat, hits, loopLength: loop.length };
   }
 
   window.setInterval(schedule, SCHEDULE_INTERVAL_MS);

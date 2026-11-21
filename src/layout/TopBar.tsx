@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { tapTempo } from "../audio/transport";
 import { Slider } from "../components/Slider";
 import { GRID_SIZES } from "../data/defaultPads";
 import { BPM_RANGE } from "../state/defaults";
@@ -137,13 +138,9 @@ function TempoControl() {
   // TAP: average the intervals of taps within the last 3 s (source_code.jsx:1187-1203).
   const taps = useRef<number[]>([]);
   const tap = () => {
-    const now = performance.now();
-    const recent = taps.current.filter((t) => now - t < 3000);
-    recent.push(now);
+    const { bpm: tapped, recent } = tapTempo(taps.current, performance.now());
     taps.current = recent;
-    if (recent.length < 2) return;
-    const avgMs = (recent[recent.length - 1] - recent[0]) / (recent.length - 1);
-    setBpm(60000 / avgMs);
+    if (tapped !== null) setBpm(tapped);
   };
 
   return (
