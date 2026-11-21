@@ -12,9 +12,12 @@ interface SliderProps {
   onBegin?(): void;
   /** Called when the drag ends, with the final value. */
   onEnd?(value: number): void;
+  /** Double-click, or double-tap on a touch screen (phones don't reliably send dblclick). */
   onDoubleClick?(): void;
   title?: string;
 }
+
+const DOUBLE_TAP_MS = 350;
 
 const THUMB = 18;
 
@@ -26,6 +29,7 @@ const THUMB = 18;
 export function Slider({ value, min, max, step, orientation, length, onChange, onBegin, onEnd, onDoubleClick, title }: SliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const lastValue = useRef(value);
+  const lastTap = useRef(0);
   const vertical = orientation === "vertical";
   const fraction = max > min ? (Math.min(max, Math.max(min, value)) - min) / (max - min) : 0;
 
@@ -49,11 +53,21 @@ export function Slider({ value, min, max, step, orientation, length, onChange, o
   return (
     <div
       ref={trackRef}
+      data-slider
       title={title}
       className="group relative shrink-0 cursor-pointer touch-none"
       style={vertical ? { width: THUMB, height: length } : { width: length, height: THUMB }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
+        if (e.pointerType !== "mouse" && onDoubleClick) {
+          const now = e.timeStamp;
+          const isDoubleTap = now - lastTap.current < DOUBLE_TAP_MS;
+          lastTap.current = isDoubleTap ? 0 : now;
+          if (isDoubleTap) {
+            onDoubleClick();
+            return;
+          }
+        }
         e.currentTarget.setPointerCapture(e.pointerId);
         onBegin?.();
         update(e);

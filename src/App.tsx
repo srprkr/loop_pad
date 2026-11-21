@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAudioUnlock } from "./hooks/useAudioUnlock";
 import { usePadKeyboard } from "./hooks/usePadKeyboard";
 import { PadInspector } from "./inspector/PadInspector";
 import { TopBar } from "./layout/TopBar";
@@ -48,6 +49,7 @@ function EditButton() {
 export default function App() {
   const scale = useWindowScale();
   usePadKeyboard();
+  useAudioUnlock();
 
   const inspectorOpen = useAppStore((s) => s.ui.inspectorOpen);
 

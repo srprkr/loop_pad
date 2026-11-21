@@ -21,6 +21,11 @@ const TELEMETRY_INTERVAL_MS = 33;
 type TimedEvent = { time: number } & ({ kind: "beat" } | { kind: "hit"; hit: PadHit });
 
 export interface AudioEngine {
+  /**
+      Creates or resumes the audio output. Browsers only allow this during certain user
+      gestures (a tap's touchend / pointerup, a click, a key), so the app calls it on those.
+  */
+  unlock(): void;
   setSettings(settings: Settings): void;
   /** Plays a pad. While recording, the hit is also quantized into the loop. */
   triggerPad(soundType: string, pitchSemitones: number, volume: number, padKey: string): void;
@@ -49,6 +54,10 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
   function getAudio() {
     if (!audio) {
+      // iOS: play as media, so the ringer/silent switch doesn't mute the pads (Safari 16.4+).
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = "playback";
+
       const ctx = new AudioContext();
       const master = ctx.createGain();
       master.gain.setValueAtTime(masterLevel(), ctx.currentTime);
@@ -159,6 +168,10 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
   //==========================================================================
   return {
+    unlock() {
+      getAudio();
+    },
+
     setSettings(next) {
       settings = next;
       if (audio) audio.master.gain.setTargetAtTime(masterLevel(), audio.ctx.currentTime, 0.01);

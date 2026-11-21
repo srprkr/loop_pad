@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { COUNT_IN_MS, FAST_BPM, LOOP_MS, expectFlash, open, pad, playButton, recButton, setBpm, trackPageErrors } from "./helpers";
+import { COUNT_IN_MS, FAST_BPM, LOOP_MS, expectFlash, open, pad, playButton, recButton, savedLoop, setBpm, trackPageErrors } from "./helpers";
 
 test("REC counts in, records 4 bars, then loops what was played", async ({ page }) => {
   const noErrors = trackPageErrors(page);
@@ -13,6 +13,8 @@ test("REC counts in, records 4 bars, then loops what was played", async ({ page 
   await expect(recButton(page)).toHaveText("REC", { timeout: COUNT_IN_MS + 1000 });
   await expect(playButton(page)).toHaveText("PLAY");
   await page.keyboard.press("1"); // Closed Hat, recorded into the loop
+  const loop = await savedLoop(page);
+  expect(loop.map(([sound, key]) => [sound, key])).toEqual([["closed_hat", "1"]]);
 
   // After 4 bars it switches to playback by itself...
   await expect(playButton(page)).toHaveText("PAUSE", { timeout: LOOP_MS + 1000 });
@@ -48,14 +50,14 @@ test("PLAY with nothing recorded just runs the metronome, and PAUSE stops", asyn
 });
 
 test("TAP sets the tempo from the tap intervals", async ({ page }) => {
+  // A controlled clock, so the taps are exactly 500 ms apart however long each click takes.
+  await page.clock.install();
   await open(page);
+  await page.clock.pauseAt(new Date("2030-01-01T00:00:00Z"));
   const tap = page.getByRole("button", { name: "TAP" });
   for (let i = 0; i < 4; i++) {
+    if (i > 0) await page.clock.runFor(500);
     await tap.click();
-    if (i < 3) await page.waitForTimeout(400);
   }
-  // 400 ms apart is 150 BPM; allow for the time each click takes.
-  const bpm = Number(await page.getByTitle("Tempo (BPM)").inputValue());
-  expect(bpm).toBeGreaterThan(130);
-  expect(bpm).toBeLessThanOrEqual(150);
+  await expect(page.getByTitle("Tempo (BPM)")).toHaveValue("120");
 });

@@ -25,6 +25,7 @@ test("a recorded loop survives a reload and plays back", async ({ page }) => {
   await setBpm(page, FAST_BPM);
 
   await recButton(page).click();
+  await expect(recButton(page)).toHaveText("COUNT"); // REC also reads "REC" before the count-in starts
   await expect(recButton(page)).toHaveText("REC", { timeout: COUNT_IN_MS + 1000 });
   await page.keyboard.press("z"); // Punch Kick
   await page.waitForTimeout(500);

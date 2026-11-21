@@ -34,6 +34,8 @@ Browsers start audio only after you interact with the page, so click it (or pres
 | Speaker, `VOL` | Mute and master volume. |
 | `EDIT` | Shows or hides the Pad Inspector for the selected pad: pitch (±12 semitones), volume (0–130%), its sound (one of 25), and its colour. Releasing a fader plays the pad; double-clicking a fader resets it. |
 
+**Touch screens.** Pads, transport buttons and faders work by touch, and several pads can be played at once. Double-tap a fader to reset it. On iPhones the pads play even with the silent switch on (Safari 16.4 and later).
+
 **Keys.** `1 2 3 4 5` / `Q W E R T` / `A S D F G` / `Z X C V B` / `Y U I O P`. Each grid size uses as many rows and columns as it has.
 
 **Saved in the browser.** Volume, mute, tempo and metronome, all three pad sets, the open/closed inspector, the selected pads and the recorded loop are kept in `localStorage`, so a reload comes back where you left off. To reset everything, clear the site's data in the browser, or run `localStorage.removeItem("loop-pad:v1")` in the console.
@@ -70,7 +72,7 @@ src/
 ## Testing
 
 - **Unit tests** ([src/audio/transport.test.ts](src/audio/transport.test.ts), [src/state/persistence.test.ts](src/state/persistence.test.ts)) check the loop rules without audio: count-in, the 4-bar take and the switch to playback, snapping to the nearest 16th (including the count-in and end-of-loop edges), same-sound replacement, the metronome pattern, TAP tempo, and that saved state is restored and bad saved data is ignored. They take under a second.
-- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. They run at 200 BPM to stay quick (about 10 s in total) and fail on any page error. The first run needs a browser: `npx playwright install chromium`.
+- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. A phone-emulation run checks that the first tap makes sound, taps select pads, the layout fits the screen, transport buttons work by touch and faders reset on a double tap. They run at 200 BPM to stay quick (about 15 s in total) and fail on any page error. Sound is checked by tapping the app's output into an analyser. The first run needs a browser: `npx playwright install chromium`.
 
 ## CI
 

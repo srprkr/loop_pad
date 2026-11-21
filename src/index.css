@@ -13,6 +13,11 @@ body,
   /* No text selection or iOS-style callouts: this is an instrument panel, not a document. */
   -webkit-user-select: none;
   user-select: none;
+  /* Touch screens: no long-press callout, no grey flash on tap, and no double-tap zoom or tap
+     delay on buttons (pads and sliders opt out of all touch gestures with touch-none). */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 input,

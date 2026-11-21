@@ -48,6 +48,7 @@ interface AppState {
 
   record(): void;
   togglePlay(): void;
+  unlockAudio(): void;
 }
 
 export const useAppStore = create<AppState>((set, get) => {
@@ -125,6 +126,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
     record: () => engine.record(),
     togglePlay: () => engine.togglePlay(),
+    unlockAudio: () => engine.unlock(),
   };
 });
 

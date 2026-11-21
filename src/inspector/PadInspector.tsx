@@ -45,7 +45,7 @@ function PadFaders() {
         readout={`${pitch > 0 ? `+${pitch}` : pitch} st`}
         value={pitch}
         {...PITCH_RANGE}
-        resetTitle="Double-click to reset (0 st)"
+        resetTitle="Double-click or double-tap to reset (0 st)"
         onChange={(v) => update({ pitchSemitones: v })}
         onEnd={(v) => preview({ pitchSemitones: v })}
         onReset={() => {
@@ -58,7 +58,7 @@ function PadFaders() {
         readout={`${Math.round(pad.volume * 100)}%`}
         value={pad.volume}
         {...PAD_VOLUME_RANGE}
-        resetTitle="Double-click to reset (100%)"
+        resetTitle="Double-click or double-tap to reset (100%)"
         onChange={(v) => update({ volume: v })}
         onEnd={(v) => preview({ volume: v })}
         onReset={() => {
