@@ -1,7 +1,7 @@
 # Loop Pad — Build Plan (draft for review)
 
-> **Status:** plan only, nothing built yet.
-> **Reference:** [`source_code`](source_code) is a working browser prototype (React + Web Audio, one file). It is the spec for behaviour and look. Line references below (`source_code:NNN`) point into it.
+> **Status:** built. Steps 0–5 are done on the `loop-pad` branch, one commit per step (Steps 1 and 2 share one). See **Build status** at the end for what changed from this plan.
+> **Reference:** [`source_code.jsx`](source_code.jsx) is a working browser prototype (React + Web Audio, one file). It is the spec for behaviour and look. Line references below (`source_code:NNN`) point into it.
 
 Loop Pad is a drum-pad instrument (VST3 + Standalone). It has a 3x3, 4x4 or 5x5 grid of synthesized drum pads, a pad inspector, and a 4-bar loop recorder with count-in and metronome.
 
@@ -21,7 +21,7 @@ Loop Pad is a drum-pad instrument (VST3 + Standalone). It has a 3x3, 4x4 or 5x5 
 ### Pads (`source_code:1243-1315`)
 - **Pointer down** plays the pad *and* selects it. The pad flashes in its theme's solid "active" colour for 120 ms. During playback, pads flash for 90 ms when the loop plays them.
 - The pad shows its key badge (top left), its name, its category (uppercase) and its pitch offset (bottom right, only if it isn't 0).
-- **Selected pad:** white ring plus a **pulsing white dot** (the dot in the mockup).
+- **Selected pad:** white ring only. The prototype also draws a pulsing white dot; it is dropped, because the ring is enough (your answer).
 - **Keyboard map** (key presses trigger the pad, but not while you're typing in an input or select):
 
   | Grid | Rows |
@@ -118,7 +118,7 @@ These are in `source_code`. My recommendation is in **bold**.
 5. Starting REC while the loop is playing stops playback and goes straight into the count-in. → **Keep it.**
 6. Pad volume up to 130% can clip. → **Soft clip on the output** (Step 1).
 
-## Open questions (remaining)
+## Open questions (answered)
 
 1. **The window:** is 720 × 1080 (portrait, sized for the open inspector) OK?
 2. **MIDI:** should incoming MIDI notes play pads (36 + *n*)? Should the loop follow the DAW's tempo and play/stop, or always run on its own BPM? *Proposed: MIDI plays pads; the loop runs on its own transport but uses the host's tempo while the host is playing.*
@@ -128,3 +128,35 @@ These are in `source_code`. My recommendation is in **bold**.
 6. **Soft clipper** on the master output: OK to add one, even though the prototype doesn't have it?
 7. **Presets:** none for v1?
 8. **Should `source_code` move** to `reference/prototype.tsx`, so it gets syntax highlighting and is clearly not part of the build?
+
+### Answers
+
+- **EDIT** only shows or hides the inspector panel.
+- **The dot** on the selected pad is dropped; the ring is enough.
+- **The loop** is 4 bars (64 steps), as in the prototype.
+- **The fifth row in 5x5** uses `Y U I O P`.
+- **Everything else** uses the proposals above: a 720 × 1080 window; MIDI plays the pads, and the loop runs on its own transport but uses the host's tempo while the host plays; placeholder company and manufacturer code; the old sampler code deleted (`Biquad` and `StepClock` kept); per-pad settings saved as state, not host parameters; a soft clipper; no presets. Of the prototype quirks, 1, 3, 4 and 6 are fixed, and 2 and 5 are kept as the prototype has them.
+
+## Build status
+
+| Step | Commit | Notes |
+|---|---|---|
+| 0 Identity + window | `Step 0: …` | `Loop Pad` / `LoopPad` / `Lpd1`, a new Windows GUID, VST3 category `Instrument|Drum`. The window opens at 600 × 900 (5/6 scale) so it fits a 1080p screen, and resizes from 2/3 to 2× scale. |
+| 4 UI | `Step 4: …` | Built **before** the C++ steps so it could be watched live with `npm run dev`. The mock backend runs the prototype's synth and transport. |
+| 1 + 2 Engine | `Steps 1-2: …` | `DrumKit` (recipes as data), `DrumVoice`, `LoopPadEngine`. 28 engine tests. |
+| 3 Plugin | `Step 3: …` | Parameters, processor, bridge, and the end-to-end host test. |
+| 5 Docs | `Step 5: …` | README rewritten as the Loop Pad guide; this file updated. |
+
+**Changes from the plan**
+
+- **The transport doesn't use `StepClock`.** Quantizing needs the exact position *between* steps when a hit lands, so the engine keeps its own position in steps, accurate to the sample. That position is calculated from the last tempo change, not added up sample by sample, because a test showed a running sum drifting one sample late after a few loops. `StepClock` and its tests are kept as a building block.
+- **MIDI works before the UI has ever opened.** The processor starts with the default 4x4 map. Without it, a session where nobody opened the window would play silence.
+- **The loop-playback test in the host test was replaced** with checks that the loop and kit survive saving and reloading. The transport is driven from the UI, which a VST3 host can't do. The engine tests cover the record → loop → playback cycle at exact sample times.
+- **The BPM field commits on Enter or blur** (the arrows apply at once). The prototype clamped on every keystroke, so typing "140" went to 60 after the first "1".
+- **Several pads can flash at once** (for example a kick and a hat on the same step). The prototype could only flash one pad at a time.
+
+**Not done / to check by hand**
+
+- **The sounds have not been compared by ear.** The C++ recipes use the prototype's numbers, and tests check frequencies, sweeps and decays, but nobody has yet listened to the browser (`npm run dev`) and the plugin side by side.
+- **The plugin UI was tested in a browser, not inside a DAW.** The real JUCE web view (WebKitGTK, WebView2, WKWebView) hasn't been opened. Run the Standalone app to check it (see README).
+- **`PRODUCT_COMPANY` and `PRODUCT_MANUFACTURER_CODE`** are still placeholders.
