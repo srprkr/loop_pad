@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #09090b;
+  color-scheme: dark;
+  /* No text selection or iOS-style callouts: this is an instrument panel, not a document. */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Touch screens: no long-press callout, no grey flash on tap, and no double-tap zoom or tap
+     delay on buttons (pads and sliders opt out of all touch gestures with touch-none). */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+input,
+select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The BPM field keeps its spinner arrows (as in the mockup); tint them for the dark theme. */
+input[type="number"] {
+  color-scheme: dark;
+}
