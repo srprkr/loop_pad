@@ -1,31 +1,30 @@
 #pragma once
 
 #include "Parameters.h"
-#include "PresetManager.h"
-#include "SampleLibrary.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <core/SamplerEngine.h>
+#include <core/LoopPadEngine.h>
 
 #include <mutex>
 
 /**
-    The audio processor: owns the parameters, the sample and the engine.
+    The audio processor: owns the parameters, the kit, the loop and the engine.
 
     Threading
-      - The UI (message thread) changes the sample through the methods below. It is handed to
-        the audio thread through a small mutex the audio thread only ever try-locks, so the
-        audio thread never waits.
-      - Old samples are kept alive on the message thread until the audio thread has let go of
-        them, so memory is never freed inside processBlock().
+      - The UI (message thread) sends pad hits and transport commands through a lock-free FIFO.
+      - The kit's current pad set (for MIDI input) and a restored loop are handed to the audio
+        thread through a small mutex that the audio thread only ever try-locks.
+      - The engine reports loop changes and playback hits through another lock-free FIFO. The
+        message thread keeps its own copy of the loop from those, for saving the session.
 */
 class PluginProcessor : public juce::AudioProcessor,
                         public juce::ChangeBroadcaster,
                         private juce::Timer
 {
 public:
-    /** Where a sample can be loaded. One slot for now; a multi-sample product adds more here. */
-    enum class SampleSlot { Main };
+    /** MIDI note of the first pad; pads follow row by row (36 = C1, the usual drum-pad layout). */
+    static constexpr int firstPadNote = 36;
+    static constexpr int maxPads = 25;
 
     PluginProcessor();
     ~PluginProcessor() override;
@@ -44,7 +43,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 5.0; }
+    double getTailLengthSeconds() const override { return 1.5; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -59,53 +58,72 @@ public:
     // Message-thread API used by the editor.
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
-    SampleLibrary& getSampleLibrary() noexcept { return sampleLibrary; }
-    PresetManager& getPresets() noexcept { return presets; }
 
-    /** Loads a file into a slot. `resetMarkers` puts the region markers back to their defaults. */
-    bool loadSample (SampleSlot slot, const juce::File& file, bool resetMarkers, juce::String& error);
-    void clearSample (SampleSlot slot);
-    const LoadedSample& getSample (SampleSlot slot) const noexcept;
+    /** The UI's kit (three pad sets + grid size), as sent by setKit. Null until the UI sends one. */
+    const juce::var& getKit() const noexcept { return kit; }
+    void setKit (const juce::var& newKit);
 
     juce::var getUiState() const { return uiState; }
     void setUiState (const juce::var& newState) { uiState = newState; }
 
-    /** Notes played from the UI (computer keyboard, on-screen controls). Safe from any thread. */
-    void pushUiNote (const core::NoteEvent& event);
+    /** Pad hits and transport commands from the UI. Safe from any single thread. */
+    void pushCommand (const core::EngineCommand& command);
 
-    bool applyPreset (const juce::String& presetId);
+    /** Loop-playback hits since the last call, for the UI's pad flashes. */
+    std::vector<core::LoopNote> takeLoopHits();
 
-    /** Latest engine snapshot for the UI (playheads, meter). */
+    /** Latest engine snapshot for the UI. */
     core::EngineTelemetry getTelemetry() const;
 
+    /** The message thread's copy of the loop (kept in step with the engine). */
+    const core::Loop& getLoop() const noexcept { return *loopCopy; }
+
     // As a ChangeBroadcaster, the processor notifies the editor when the whole state was
-    // replaced (session load or preset), so the UI can refetch everything.
+    // replaced (session load), so the UI can refetch everything.
 
 private:
+    struct PadSlot
+    {
+        int sound = -1;
+        float pitch = 0.0f;
+        float volume = 1.0f;
+        char key = 0;
+    };
+    using PadTable = std::array<PadSlot, maxPads>;
+
     void timerCallback() override;
-    void publishSampleToAudioThread();
-    void setParameterPlainValue (const char* paramId, float value);
+    void drainEngineEvents();
+    void publishPadTable();
+    void publishLoop();
 
     juce::AudioProcessorValueTreeState state;
     ParameterSnapshot parameterSnapshot;
-    SampleLibrary sampleLibrary;
-    PresetManager presets;
+    core::LoopPadEngine engine;
 
-    core::SamplerEngine engine;
-
-    // Message-thread copies of what the audio thread is (or will be) using.
-    LoadedSample mainSample;
+    // Message-thread state.
+    juce::var kit;
     juce::var uiState;
-    std::vector<core::SamplePtr> retiredSamples;
+    std::unique_ptr<core::Loop> loopCopy = std::make_unique<core::Loop>();
+    std::vector<core::LoopNote> pendingHits;
 
-    // Hand-over to the audio thread.
+    // Hand-over to the audio thread (try-locked there).
     std::mutex handoverMutex;
-    core::SamplePtr pendingSample;
-    bool samplePending = false;
+    PadTable pendingPads {};
+    bool padsPending = false;
+    std::unique_ptr<core::Loop> pendingLoop = std::make_unique<core::Loop>();
+    bool loopPending = false;
+    PadTable audioPads {}; // audio thread only
 
-    juce::AbstractFifo uiNoteFifo { 256 };
-    std::array<core::NoteEvent, 256> uiNotes {};
-    std::vector<core::NoteEvent> blockEvents;
+    // UI -> audio thread.
+    static constexpr int commandFifoSize = 512;
+    juce::AbstractFifo commandFifo { commandFifoSize };
+    std::array<core::EngineCommand, commandFifoSize> commandSlots {};
+    std::vector<core::EngineCommand> blockCommands;
+
+    // Audio thread -> message thread.
+    static constexpr int eventFifoSize = 4096;
+    juce::AbstractFifo eventFifo { eventFifoSize };
+    std::array<core::EngineEvent, eventFifoSize> eventSlots {};
 
     mutable std::mutex telemetryMutex;
     core::EngineTelemetry telemetry;

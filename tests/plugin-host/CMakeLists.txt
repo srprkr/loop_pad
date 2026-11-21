@@ -7,7 +7,6 @@ target_compile_definitions(plugin_host_test PRIVATE
     JUCE_USE_CURL=0)
 target_link_libraries(plugin_host_test PRIVATE
     juce::juce_audio_processors
-    juce::juce_audio_formats
     juce::juce_recommended_config_flags)
 
 # Build the plugin first so the test always checks the current build.

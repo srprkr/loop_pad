@@ -1,11 +1,11 @@
 // End-to-end check of the built VST3, run by ctest on every platform (including CI on Windows/macOS).
 //
-// Loads the plugin the way a DAW does, gives it a sample through its saved state (as reopening a
-// project would), sends MIDI notes, and fails if no audio comes out.
+// Loads the plugin the way a DAW does, sends MIDI notes to the pads, and checks that audio comes
+// out, that MIDI follows the saved kit, and that the kit and recorded loop survive a save/reload.
+// (The loop transport is driven from the UI, which a host can't do; tests/EngineTests.cpp covers it.)
 //
 // Usage: plugin_host_test "<path to the .vst3>"
 
-#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 using namespace juce;
@@ -23,48 +23,31 @@ namespace
             ++failures;
     }
 
-    /** Writes a two-second decaying 220 Hz tone to a temporary WAV file. */
-    File writeTestTone()
-    {
-        auto file = File::getSpecialLocation (File::tempDirectory).getChildFile ("plugin-host-test-tone.wav");
-        file.deleteFile();
+    //==========================================================================
+    // JUCE's VST3 host wraps the plugin's own state as base64 in <VST3PluginState><IComponent>.
 
-        AudioBuffer<float> tone (1, (int) sampleRate * 2);
-        for (int i = 0; i < tone.getNumSamples(); ++i)
-            tone.setSample (0, i, 0.6f * std::sin (MathConstants<float>::twoPi * 220.0f * (float) i / (float) sampleRate)
-                                      * std::exp (-(float) i / (float) sampleRate));
-
-        WavAudioFormat wav;
-        std::unique_ptr<OutputStream> stream (file.createOutputStream().release());
-        if (auto writer = std::unique_ptr<AudioFormatWriter> (wav.createWriterFor (stream.get(), sampleRate, 1, 16, {}, 0)))
-        {
-            stream.release(); // the writer owns the stream now
-            writer->writeFromAudioSampleBuffer (tone, 0, tone.getNumSamples());
-        }
-        return file;
-    }
-
-    /** Points the plugin's saved state at a sample, like reopening a DAW project. */
-    void loadSampleThroughState (AudioPluginInstance& plugin, const File& sample)
+    ValueTree readPluginState (AudioPluginInstance& plugin)
     {
         MemoryBlock state;
         plugin.getStateInformation (state);
         auto xml = AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
-        if (xml == nullptr)
-            return;
-
-        // JUCE's VST3 host wraps the plugin's own state as base64 in <VST3PluginState><IComponent>.
-        auto* component = xml->getChildByName ("IComponent");
+        auto* component = xml != nullptr ? xml->getChildByName ("IComponent") : nullptr;
         MemoryBlock inner;
         if (component == nullptr || ! inner.fromBase64Encoding (component->getAllSubText()))
-            return;
+            return {};
 
         auto pluginXml = AudioProcessor::getXmlFromBinary (inner.getData(), (int) inner.getSize());
-        if (pluginXml == nullptr)
-            return;
+        return pluginXml != nullptr ? ValueTree::fromXml (*pluginXml) : ValueTree();
+    }
 
-        auto tree = ValueTree::fromXml (*pluginXml);
-        tree.getOrCreateChildWithName ("ExtraState", nullptr).setProperty ("samplePath", sample.getFullPathName(), nullptr);
+    void writePluginState (AudioPluginInstance& plugin, const ValueTree& tree)
+    {
+        MemoryBlock state;
+        plugin.getStateInformation (state);
+        auto xml = AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
+        auto* component = xml != nullptr ? xml->getChildByName ("IComponent") : nullptr;
+        if (component == nullptr)
+            return;
 
         MemoryBlock newInner;
         AudioProcessor::copyXmlToBinary (*tree.createXml(), newInner);
@@ -76,6 +59,16 @@ namespace
         plugin.setStateInformation (newState.getData(), (int) newState.getSize());
     }
 
+    /** A kit whose 4x4 set has `sound` on pad 0 and nothing usable elsewhere. */
+    String kitWithFirstPad (const String& sound)
+    {
+        String pads;
+        for (int i = 0; i < 16; ++i)
+            pads << (i > 0 ? "," : "") << "{\"soundType\":\"" << (i == 0 ? sound : String ("none")) << "\",\"pitchSemitones\":0,\"volume\":1,\"key\":\"" << String (i) << "\"}";
+        return "{\"gridSize\":\"4x4\",\"pads\":{\"4x4\":[" + pads + "]}}";
+    }
+
+    //==========================================================================
     /** RMS of the left channel over `blocks` blocks; `midi` is delivered in the first block. */
     double render (AudioPluginInstance& plugin, const MidiBuffer& midi, int blocks)
     {
@@ -141,32 +134,63 @@ int main (int argc, char** argv)
     check (plugin->acceptsMidi(), "accepts MIDI");
     check (plugin->getTotalNumOutputChannels() == 2, "stereo output");
 
-    const auto tone = writeTestTone();
-    loadSampleThroughState (*plugin, tone);
-
     plugin->setPlayConfigDetails (0, 2, sampleRate, blockSize);
     plugin->prepareToPlay (sampleRate, blockSize);
 
     check (render (*plugin, {}, 10) < 1.0e-6, "silent with no notes");
 
+    // Default 4x4 kit, before any UI has opened: note 36 = pad 1 (Closed Hat), 48 = pad Z (Punch Kick).
     for (int channel : { 1, 10, 16 })
     {
-        const auto level = render (*plugin, single (MidiMessage::noteOn (channel, 60, (uint8) 100)), 20);
-        check (level > 0.01, "MIDI note on channel " + String (channel) + " produces audio (rms " + String (level, 4) + ")");
-        render (*plugin, single (MidiMessage::noteOff (channel, 60)), 40);
+        const auto level = render (*plugin, single (MidiMessage::noteOn (channel, 48, (uint8) 100)), 20);
+        check (level > 0.01, "MIDI note 48 on channel " + String (channel) + " plays a pad (rms " + String (level, 4) + ")");
+        render (*plugin, {}, 40);
     }
 
-    const auto late = render (*plugin, single (MidiMessage::noteOn (1, 67, (uint8) 90), blockSize / 2), 20);
-    check (late > 0.01, "note arriving mid-block produces audio");
-    // Default release is 0.5 s; 80 blocks is ~0.85 s.
-    render (*plugin, single (MidiMessage::allNotesOff (1)), 80);
+    const auto hat = render (*plugin, single (MidiMessage::noteOn (1, 36, (uint8) 127), blockSize / 2), 10);
+    check (hat > 0.005, "note 36 arriving mid-block plays pad 1 (rms " + String (hat, 4) + ")");
+    render (*plugin, {}, 40);
 
-    const auto afterRelease = render (*plugin, {}, 10);
-    check (afterRelease < 1.0e-4, "silent again after note off");
+    check (render (*plugin, single (MidiMessage::noteOn (1, 35, (uint8) 127)), 20) < 1.0e-6, "notes below the pads are ignored");
+    check (render (*plugin, single (MidiMessage::noteOn (1, 52, (uint8) 127)), 20) < 1.0e-6, "notes above the 4x4 pads are ignored");
+
+    const auto loud = render (*plugin, single (MidiMessage::noteOn (1, 49, (uint8) 127)), 10);
+    render (*plugin, {}, 60);
+    const auto soft = render (*plugin, single (MidiMessage::noteOn (1, 49, (uint8) 32)), 10);
+    render (*plugin, {}, 60);
+    check (soft < loud * 0.5, "velocity scales the pad volume");
+    render (*plugin, {}, 40); // note 49 is Sub 808, which rings for 0.8 s
+
+    check (render (*plugin, {}, 10) < 1.0e-6, "silent again once the sounds have ended");
+
+    // Session state: a saved kit drives MIDI, and kit + loop come back unchanged.
+    {
+        auto tree = readPluginState (*plugin);
+        check (tree.isValid(), "plugin state readable");
+
+        auto extra = tree.getOrCreateChildWithName ("ExtraState", nullptr);
+        extra.setProperty ("kit", kitWithFirstPad ("sub_808"), nullptr);
+        extra.setProperty ("loop", "[{\"step\":4,\"sound\":\"clap\",\"pitch\":2,\"volume\":0.5,\"key\":\"Q\"},"
+                                   "{\"step\":99,\"sound\":\"clap\",\"pitch\":0,\"volume\":1,\"key\":\"Q\"}]", nullptr);
+        writePluginState (*plugin, tree); // restored synchronously: this thread is the message thread
+
+        // Sub 808 (0.8 s) is far longer than the closed hat (0.08 s).
+        render (*plugin, single (MidiMessage::noteOn (1, 36, (uint8) 127)), 10);
+        check (render (*plugin, {}, 20) > 0.01, "MIDI follows the kit from the saved state");
+        render (*plugin, {}, 80);
+        check (render (*plugin, single (MidiMessage::noteOn (1, 37, (uint8) 127)), 20) < 1.0e-6, "pads with an unknown sound stay silent");
+
+        const auto reread = readPluginState (*plugin).getChildWithName ("ExtraState");
+        const auto loop = JSON::parse (reread["loop"].toString());
+        check (loop.isArray() && loop.size() == 1, "loop restored (invalid steps dropped)");
+        check (loop[0]["sound"] == "clap" && (int) loop[0]["step"] == 4 && (double) loop[0]["pitch"] == 2.0
+                   && std::abs ((double) loop[0]["volume"] - 0.5) < 1.0e-6 && loop[0]["key"] == "Q",
+               "loop hit round-trips");
+        check (JSON::parse (reread["kit"].toString())["pads"]["4x4"][0]["soundType"] == "sub_808", "kit round-trips");
+    }
 
     plugin->releaseResources();
     plugin.reset();
-    tone.deleteFile();
 
     std::printf ("\n%s\n", failures == 0 ? "PLUGIN MIDI TEST PASSED" : "PLUGIN MIDI TEST FAILED");
     return failures == 0 ? 0 : 1;

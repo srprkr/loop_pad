@@ -11,9 +11,8 @@
                   on the message thread and resolve a JavaScript promise.
     Plugin -> UI: events, sent ~30 times a second:
                     "parameters"    { id: plainValue, ... } for parameters changed by the host
-                    "telemetry"     playheads, meter, host tempo
-                    "samples"       sample descriptions after a load / clear
-                    "stateReplaced" the whole state changed (preset / session load); UI refetches
+                    "telemetry"     transport mode / step, metronome beats, loop hits, tempo, meter
+                    "stateReplaced" the whole state changed (session load); UI refetches
 
     The TypeScript side of this contract lives in ui/src/bridge/.
 */
@@ -37,18 +36,12 @@ private:
 
     juce::var describeState() const;
     juce::var describeParameters() const;
-    juce::var describeSamples() const;
-    juce::var describePresets() const;
 
     void setParameter (const juce::String& id, float plainValue);
     void beginGesture (const juce::String& id);
     void endGesture (const juce::String& id);
 
-    void browseForSample (PluginProcessor::SampleSlot slot, Completion completion);
-    juce::var loadDroppedSample (PluginProcessor::SampleSlot slot, const juce::String& fileName, const juce::String& base64);
-
     void emit (const juce::Identifier& eventId, const juce::var& payload);
-    void sendSamples();
 
     void timerCallback() override;
     void parameterValueChanged (int parameterIndex, float newValue) override;
@@ -60,6 +53,4 @@ private:
     juce::Array<juce::RangedAudioParameter*> parameters;
     std::vector<std::atomic<bool>> parameterDirty;
     juce::StringArray activeGestures;
-
-    std::unique_ptr<juce::FileChooser> fileChooser;
 };

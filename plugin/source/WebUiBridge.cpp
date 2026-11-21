@@ -1,26 +1,9 @@
 #include "WebUiBridge.h"
 
 using namespace juce;
-using SampleSlot = PluginProcessor::SampleSlot;
 
 namespace
 {
-    std::optional<SampleSlot> slotFromString (const var& value)
-    {
-        const auto text = value.toString();
-        if (text == "main") return SampleSlot::Main;
-        return std::nullopt;
-    }
-
-    var result (bool ok, const String& error = {})
-    {
-        auto* object = new DynamicObject();
-        object->setProperty ("ok", ok);
-        if (error.isNotEmpty())
-            object->setProperty ("error", error);
-        return var (object);
-    }
-
     String kindOf (const RangedAudioParameter& parameter)
     {
         if (dynamic_cast<const AudioParameterBool*> (&parameter) != nullptr)   return "bool";
@@ -38,6 +21,22 @@ namespace
     {
         static const var none;
         return isPositiveAndBelow (index, args.size()) ? args.getReference (index) : none;
+    }
+
+    /** A pad hit from the UI: (soundType, pitchSemitones, volume[, padKey]). */
+    std::optional<core::EngineCommand> soundCommand (core::EngineCommand::Type type, const Array<var>& args)
+    {
+        const int sound = core::DrumKit::findSound (arg (args, 0).toString().toStdString());
+        if (sound < 0)
+            return std::nullopt;
+
+        core::EngineCommand command;
+        command.type = type;
+        command.sound = sound;
+        command.pitch = jlimit (-12.0f, 12.0f, (float) (double) arg (args, 1));
+        command.volume = jlimit (0.0f, 1.3f, (float) (double) arg (args, 2));
+        command.padKey = (char) arg (args, 3).toString()[0];
+        return command;
     }
 } // namespace
 
@@ -64,7 +63,7 @@ WebUiBridge::~WebUiBridge()
 
 WebBrowserComponent::Options WebUiBridge::registerNativeFunctions (WebBrowserComponent::Options options)
 {
-    const auto fn = [this, &options] (const char* name, std::function<void (const Args&, Completion)> body)
+    const auto fn = [&options] (const char* name, std::function<void (const Args&, Completion)> body)
     {
         options = options.withNativeFunction (name, [body] (const Args& args, Completion complete) { body (args, std::move (complete)); });
     };
@@ -78,6 +77,12 @@ WebBrowserComponent::Options WebUiBridge::registerNativeFunctions (WebBrowserCom
         done ({});
     });
 
+    fn ("setKit", [this] (const Args& a, Completion done)
+    {
+        processor.setKit (arg (a, 0));
+        done ({});
+    });
+
     // Parameters ---------------------------------------------------------------
     fn ("setParameter", [this] (const Args& a, Completion done)
     {
@@ -87,77 +92,38 @@ WebBrowserComponent::Options WebUiBridge::registerNativeFunctions (WebBrowserCom
     fn ("beginGesture", [this] (const Args& a, Completion done) { beginGesture (arg (a, 0).toString()); done ({}); });
     fn ("endGesture",   [this] (const Args& a, Completion done) { endGesture (arg (a, 0).toString());   done ({}); });
 
-    // Samples ------------------------------------------------------------------
-    fn ("browseForSample", [this] (const Args& a, Completion done)
+    // Pads ---------------------------------------------------------------------
+    using Type = core::EngineCommand::Type;
+
+    fn ("triggerPad", [this] (const Args& a, Completion done)
     {
-        if (const auto slot = slotFromString (arg (a, 0)))
-            browseForSample (*slot, std::move (done));
-        else
-            done (result (false, "Unknown sample slot"));
+        if (const auto command = soundCommand (Type::Trigger, a))
+            processor.pushCommand (*command);
+        done ({});
     });
 
-    fn ("loadDroppedSample", [this] (const Args& a, Completion done)
+    fn ("previewSound", [this] (const Args& a, Completion done)
     {
-        const auto slot = slotFromString (arg (a, 0));
-        done (slot ? loadDroppedSample (*slot, arg (a, 1).toString(), arg (a, 2).toString())
-                   : result (false, "Unknown sample slot"));
+        if (const auto command = soundCommand (Type::Preview, a))
+            processor.pushCommand (*command);
+        done ({});
     });
 
-    fn ("clearSample", [this] (const Args& a, Completion done)
+    // Transport ----------------------------------------------------------------
+    const auto transportCommand = [this] (Type type)
     {
-        if (const auto slot = slotFromString (arg (a, 0)))
+        return [this, type] (const Args&, Completion done)
         {
-            processor.clearSample (*slot);
-            sendSamples();
-        }
-        done ({});
-    });
+            core::EngineCommand command;
+            command.type = type;
+            processor.pushCommand (command);
+            done ({});
+        };
+    };
 
-    // Notes from the UI --------------------------------------------------------
-    using Type = core::NoteEvent::Type;
-    const auto noteArg = [] (const Args& a, int index, int fallback) { return jlimit (0, 127, a.size() > index ? (int) a[index] : fallback); };
-
-    fn ("noteOn", [this, noteArg] (const Args& a, Completion done)
-    {
-        processor.pushUiNote ({ Type::NoteOn, 0, noteArg (a, 0, 60), jmax (1, noteArg (a, 1, 100)) });
-        done ({});
-    });
-    fn ("noteOff", [this, noteArg] (const Args& a, Completion done)
-    {
-        processor.pushUiNote ({ Type::NoteOff, 0, noteArg (a, 0, 60), 0 });
-        done ({});
-    });
-    fn ("allNotesOff", [this] (const Args&, Completion done)
-    {
-        processor.pushUiNote ({ Type::AllNotesOff, 0, 0, 0 });
-        done ({});
-    });
-
-    // Presets ------------------------------------------------------------------
-    fn ("listPresets", [this] (const Args&, Completion done) { done (describePresets()); });
-
-    fn ("savePreset", [this] (const Args& a, Completion done)
-    {
-        const auto id = processor.getPresets().save (arg (a, 0).toString());
-        done (id.isNotEmpty() ? describePresets() : result (false, "Could not save the preset"));
-    });
-
-    fn ("loadPreset", [this] (const Args& a, Completion done)
-    {
-        done (result (processor.applyPreset (arg (a, 0).toString()), "Preset could not be loaded"));
-    });
-
-    fn ("setPresetFavorite", [this] (const Args& a, Completion done)
-    {
-        processor.getPresets().setFavorite (arg (a, 0).toString(), (bool) arg (a, 1));
-        done (describePresets());
-    });
-
-    fn ("deletePreset", [this] (const Args& a, Completion done)
-    {
-        processor.getPresets().remove (arg (a, 0).toString());
-        done (describePresets());
-    });
+    fn ("record", transportCommand (Type::Record));
+    fn ("togglePlay", transportCommand (Type::TogglePlay));
+    fn ("stop", transportCommand (Type::Stop));
 
     return options;
 }
@@ -165,6 +131,7 @@ WebBrowserComponent::Options WebUiBridge::registerNativeFunctions (WebBrowserCom
 void WebUiBridge::attach (WebBrowserComponent& b)
 {
     browser = &b;
+    processor.takeLoopHits(); // don't replay hits from while the editor was closed
     startTimerHz (30);
 }
 
@@ -178,8 +145,7 @@ var WebUiBridge::describeState() const
 {
     auto* object = new DynamicObject();
     object->setProperty ("parameters", describeParameters());
-    object->setProperty ("samples", describeSamples());
-    object->setProperty ("presets", describePresets());
+    object->setProperty ("kit", processor.getKit());
     object->setProperty ("uiState", processor.getUiState());
     object->setProperty ("productName", JucePlugin_Name);
     object->setProperty ("version", JucePlugin_VersionString);
@@ -216,31 +182,6 @@ var WebUiBridge::describeParameters() const
     return list;
 }
 
-var WebUiBridge::describeSamples() const
-{
-    auto* object = new DynamicObject();
-    object->setProperty ("main", processor.getSample (SampleSlot::Main).toVar());
-    return var (object);
-}
-
-var WebUiBridge::describePresets() const
-{
-    Array<var> items;
-    for (const auto& preset : processor.getPresets().list())
-    {
-        auto* object = new DynamicObject();
-        object->setProperty ("id", preset.id);
-        object->setProperty ("name", preset.name);
-        object->setProperty ("favorite", preset.favorite);
-        items.add (var (object));
-    }
-
-    auto* object = new DynamicObject();
-    object->setProperty ("items", items);
-    object->setProperty ("currentId", processor.getPresets().getCurrentPresetId());
-    return var (object);
-}
-
 //==============================================================================
 void WebUiBridge::setParameter (const String& id, float plainValue)
 {
@@ -273,55 +214,11 @@ void WebUiBridge::endGesture (const String& id)
     }
 }
 
-void WebUiBridge::browseForSample (SampleSlot slot, Completion completion)
-{
-    fileChooser = std::make_unique<FileChooser> ("Load Sample",
-                                                 File::getSpecialLocation (File::userMusicDirectory),
-                                                 processor.getSampleLibrary().getSupportedWildcard());
-
-    fileChooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles,
-                              [this, slot, completion = std::move (completion)] (const FileChooser& chooser)
-    {
-        const auto file = chooser.getResult();
-        if (file == File())
-        {
-            completion (result (false)); // cancelled
-            return;
-        }
-
-        String error;
-        const bool ok = processor.loadSample (slot, file, true, error);
-        sendSamples();
-        completion (result (ok, error));
-    });
-}
-
-var WebUiBridge::loadDroppedSample (SampleSlot slot, const String& fileName, const String& base64)
-{
-    MemoryOutputStream decoded;
-    if (! Base64::convertFromBase64 (decoded, base64) || decoded.getDataSize() == 0)
-        return result (false, "The dropped file could not be read.");
-
-    const auto stored = processor.getSampleLibrary().storeImportedFile (fileName, decoded.getMemoryBlock());
-    if (stored == File())
-        return result (false, "The dropped file could not be saved.");
-
-    String error;
-    const bool ok = processor.loadSample (slot, stored, true, error);
-    sendSamples();
-    return result (ok, error);
-}
-
 //==============================================================================
 void WebUiBridge::emit (const Identifier& eventId, const var& payload)
 {
     if (browser != nullptr)
         browser->emitEventIfBrowserIsVisible (eventId, payload);
-}
-
-void WebUiBridge::sendSamples()
-{
-    emit ("samples", describeSamples());
 }
 
 void WebUiBridge::parameterValueChanged (int parameterIndex, float)
@@ -348,18 +245,23 @@ void WebUiBridge::timerCallback()
 
     const auto t = processor.getTelemetry();
 
-    Array<var> voices;
-    for (const auto& voice : t.voices)
+    Array<var> hits;
+    for (const auto& note : processor.takeLoopHits())
     {
-        if (! voice.active)
-            continue;
-
-        voices.add (voice.position);
+        auto* hit = new DynamicObject();
+        hit->setProperty ("padKey", String::charToString ((juce_wchar) (unsigned char) note.padKey));
+        hit->setProperty ("soundType", core::DrumKit::sound (note.sound).id);
+        hits.add (var (hit));
     }
 
     auto* telemetry = new DynamicObject();
     telemetry->setProperty ("peak", Array<var> { t.peakLeft, t.peakRight });
-    telemetry->setProperty ("voices", voices);
-    telemetry->setProperty ("hostBpm", t.hostBpm);
+    telemetry->setProperty ("mode", core::toString (t.mode));
+    telemetry->setProperty ("step", t.step);
+    telemetry->setProperty ("recordBeat", (int) t.recordBeat);
+    telemetry->setProperty ("bpm", t.bpm);
+    telemetry->setProperty ("hostSynced", t.hostSynced);
+    telemetry->setProperty ("hits", hits);
+    telemetry->setProperty ("loopLength", t.loopLength);
     emit ("telemetry", var (telemetry));
 }
