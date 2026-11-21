@@ -111,6 +111,16 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
+The build applies a small patch to JUCE ([cmake/patches/juce-linux-webview-ipc.patch](cmake/patches/juce-linux-webview-ipc.patch)). It fixes JUCE 8.0.9's Linux web view, which crashed with `std::bad_alloc` once a message to the UI was larger than about 4 KB. If you use your own JUCE checkout with `-DJUCE_DIR`, apply the patch to it yourself.
+
+To run the Standalone app: `./build/plugin/LoopPad_artefacts/Release/Standalone/"Loop Pad"`. VS Code installed as a snap gives its terminal snap library paths, and the app then fails with `undefined symbol: __libc_pthread_init`. Run it from a normal terminal instead, or strip the snap environment first:
+
+```bash
+env -i HOME="$HOME" PATH=/usr/bin:/bin DISPLAY="$DISPLAY" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
+    XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+    ./build/plugin/LoopPad_artefacts/Release/Standalone/"Loop Pad"
+```
+
 Pass `-DJUCE_DIR=<path>` to use a local JUCE checkout instead of downloading one.
 
 ### Engine tests only

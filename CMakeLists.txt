@@ -47,10 +47,15 @@ if(BUILD_PLUGIN)
         add_subdirectory(${JUCE_DIR} juce EXCLUDE_FROM_ALL)
     else()
         include(FetchContent)
+        # The patch fixes JUCE 8.0.9's Linux web view pipe, which loses its framing when a
+        # message to the UI is larger than one atomic pipe write (~4 KB) and then crashes the
+        # web view process with std::bad_alloc. Windows and macOS don't use that code.
         FetchContent_Declare(JUCE
             GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
             GIT_TAG 8.0.9
-            GIT_SHALLOW TRUE)
+            GIT_SHALLOW TRUE
+            PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/juce-linux-webview-ipc.patch
+                          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake)
         FetchContent_MakeAvailable(JUCE)
     endif()
 
