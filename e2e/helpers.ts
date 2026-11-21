@@ -1,5 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
+/** Keeps test Chromium off the speakers (Firefox: media.volume_scale in playwright.config.ts). */
+export const MUTED_CHROMIUM_ARGS = ["--mute-audio"];
+
 /** Fails the test on any uncaught page error (e.g. a Web Audio call in the wrong order). */
 export function trackPageErrors(page: Page) {
   const errors: string[] = [];

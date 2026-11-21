@@ -1,9 +1,9 @@
 import { devices, expect, test } from "@playwright/test";
-import { pad, peakOutput, playButton, recButton, tapAudioOutput, trackPageErrors } from "./helpers";
+import { MUTED_CHROMIUM_ARGS, pad, peakOutput, playButton, recButton, tapAudioOutput, trackPageErrors } from "./helpers";
 
 // A phone: touch input, mobile viewport. No autoplay exception, so audio must be unlocked by
 // the taps themselves, as on a real phone.
-test.use({ ...devices["Pixel 7"], launchOptions: { args: ["--autoplay-policy=user-gesture-required"] } });
+test.use({ ...devices["Pixel 7"], launchOptions: { args: [...MUTED_CHROMIUM_ARGS, "--autoplay-policy=user-gesture-required"] } });
 
 test.beforeEach(async ({ page }) => {
   await tapAudioOutput(page);
