@@ -61,3 +61,40 @@ test("TAP sets the tempo from the tap intervals", async ({ page }) => {
   }
   await expect(page.getByTitle("Tempo (BPM)")).toHaveValue("120");
 });
+
+test("the count-in shows 3, 2, 1, then GO! left of REC, then clears", async ({ page }) => {
+  const noErrors = trackPageErrors(page);
+  await open(page);
+  await setBpm(page, FAST_BPM);
+
+  // Record every label the badge shows, frame by frame, until it has shown GO! and cleared.
+  const seen = page.evaluate(
+    () =>
+      new Promise<string[]>((resolve) => {
+        const labels: string[] = [];
+        const frame = () => {
+          const text = document.querySelector("[data-countdown]")?.textContent ?? "";
+          if (text !== (labels.at(-1) ?? "")) labels.push(text);
+          if (labels.includes("GO!") && text === "") resolve(labels.filter(Boolean));
+          else requestAnimationFrame(frame);
+        };
+        frame();
+      }),
+  );
+  await recButton(page).click();
+  expect(await seen).toEqual(["3", "2", "1", "GO!"]);
+
+  // The badge sits between the grid-size buttons and REC, overlapping neither.
+  await recButton(page).click(); // stop
+  await recButton(page).click(); // record again
+  const badge = (await page.locator("[data-countdown]").boundingBox())!;
+  const rec = (await recButton(page).boundingBox())!;
+  const grid = (await page.getByRole("button", { name: "5x5" }).boundingBox())!;
+  expect(badge.x + badge.width).toBeLessThanOrEqual(rec.x);
+  expect(badge.x).toBeGreaterThanOrEqual(grid.x + grid.width);
+
+  // Stopping during the count-in clears it.
+  await recButton(page).click();
+  await expect(page.locator("[data-countdown]")).toHaveCount(0);
+  noErrors();
+});

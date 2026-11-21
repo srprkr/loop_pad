@@ -82,6 +82,17 @@ export function displayStep(mode: TransportMode, position: number): number {
   return Math.floor(position) % LOOP_STEPS;
 }
 
+/**
+ * The count-in number to show for a displayed step: 3, 2, 1 on the three count-in beats, then
+ * "GO!" for the first beat of the recording, otherwise null.
+ */
+export function countdownLabel(mode: TransportMode, step: number): string | null {
+  // Clamped because the step reads -13 for the 50 ms before the first click is due.
+  if (mode === "countIn") return String(Math.min(COUNT_IN_STEPS / 4, Math.ceil(-step / 4)));
+  if (mode === "recording" && step < 4) return "GO!";
+  return null;
+}
+
 /** BPM from tap times (ms): the average interval of taps within the last 3 s, or null. */
 export function tapTempo(tapTimes: number[], now: number): { bpm: number | null; recent: number[] } {
   const recent = [...tapTimes.filter((t) => now - t < 3000), now];

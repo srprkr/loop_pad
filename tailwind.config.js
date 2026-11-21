@@ -13,6 +13,16 @@ export default {
           850: "#1f1f22",
         },
       },
+      // The count-in number pops in on each beat.
+      keyframes: {
+        "countdown-pop": {
+          "0%": { transform: "scale(1.6)", opacity: "0" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
+      },
+      animation: {
+        "countdown-pop": "countdown-pop 120ms ease-out",
+      },
     },
   },
   plugins: [],

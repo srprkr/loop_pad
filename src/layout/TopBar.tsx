@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Pause, Play, Volume2, VolumeX } from "lucide-react";
-import { tapTempo } from "../audio/transport";
+import { countdownLabel, tapTempo } from "../audio/transport";
 import { Slider } from "../components/Slider";
 import { GRID_SIZES } from "../data/defaultPads";
 import { BPM_RANGE } from "../state/defaults";
@@ -48,7 +48,8 @@ function Transport() {
   const playing = mode === "playing";
 
   return (
-    <div className="mx-auto flex shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1">
+    <div className="relative mx-auto flex shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1">
+      <Countdown />
       <button
         onClick={record}
         className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-medium transition-all ${
@@ -73,6 +74,24 @@ function Transport() {
 
       <MetronomeButton />
       <TempoControl />
+    </div>
+  );
+}
+
+/** 3, 2, 1 during the count-in, then "GO!" on the first recorded beat, just left of REC. */
+function Countdown() {
+  const label = useTelemetryStore((s) => countdownLabel(s.mode, s.step));
+  if (label === null) return null;
+  const go = label === "GO!";
+  return (
+    <div
+      key={label} // remount on each beat so the pop animation replays
+      data-countdown
+      className={`pointer-events-none absolute right-full mr-1.5 animate-countdown-pop font-mono font-bold tabular-nums ${
+        go ? "text-xs text-emerald-400" : "text-lg text-rose-400"
+      }`}
+    >
+      {label}
     </div>
   );
 }

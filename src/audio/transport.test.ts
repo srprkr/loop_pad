@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LoopNote } from "../types";
-import { COUNT_IN_STEPS, LOOP_STEPS, actionsForStep, addHit, displayStep, modeAt, quantizeHit, startStep, tapTempo } from "./transport";
+import { COUNT_IN_STEPS, LOOP_STEPS, actionsForStep, addHit, countdownLabel, displayStep, modeAt, quantizeHit, startStep, tapTempo } from "./transport";
 
 const recording = { running: true, recordRun: true };
 const playing = { running: true, recordRun: false };
@@ -132,6 +132,27 @@ describe("display step", () => {
     expect(displayStep("countIn", -11.5)).toBe(-12);
     expect(displayStep("recording", 10.7)).toBe(10);
     expect(displayStep("playing", 64 + 5.2)).toBe(5);
+  });
+});
+
+describe("countdown", () => {
+  it("shows 3, 2, 1 on the count-in beats, then GO! for the first recorded beat", () => {
+    const labels = Array.from({ length: 20 }, (_, i) => i - 12).map((step) =>
+      countdownLabel(step < 0 ? "countIn" : "recording", step),
+    );
+    expect(labels).toEqual([
+      ...Array(4).fill("3"), ...Array(4).fill("2"), ...Array(4).fill("1"),
+      ...Array(4).fill("GO!"), ...Array(4).fill(null),
+    ]);
+  });
+
+  it("shows 3 in the moment before the first count-in click", () => {
+    expect(countdownLabel("countIn", -13)).toBe("3");
+  });
+
+  it("shows nothing when idle or playing", () => {
+    expect(countdownLabel("idle", 0)).toBeNull();
+    expect(countdownLabel("playing", 0)).toBeNull();
   });
 });
 
