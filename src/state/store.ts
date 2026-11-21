@@ -86,7 +86,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const { kit, ui } = get();
       if (kit.gridSize === size) return;
       setKit({ ...kit, gridSize: size });
-      // Switching selects the new set's first pad (source_code.jsx:1087-1091).
+      // Switching selects the new set's first pad (refs/source_code.jsx:1087-1091).
       setUi({ ...ui, selectedPad: { ...ui.selectedPad, [size]: 0 } });
     },
 
@@ -143,7 +143,7 @@ export function useSelectedPad(): { pad: PadConfig; index: number } {
 }
 
 //==============================================================================
-// Pad flashes: 120 ms for hits you play, 90 ms for hits the loop plays (source_code.jsx:890, :989).
+// Pad flashes: 120 ms for hits you play, 90 ms for hits the loop plays (refs/source_code.jsx:890, :989).
 
 export const LIVE_FLASH_MS = 120;
 export const LOOP_FLASH_MS = 90;

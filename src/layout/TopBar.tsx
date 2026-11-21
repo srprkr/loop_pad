@@ -6,7 +6,7 @@ import { GRID_SIZES } from "../data/defaultPads";
 import { BPM_RANGE } from "../state/defaults";
 import { useAppStore, useTelemetryStore } from "../state/store";
 
-// source_code.jsx:1080-1240. Grid size (left), transport (centre), master volume (right).
+// refs/source_code.jsx:1080-1240. Grid size (left), transport (centre), master volume (right).
 
 export function TopBar() {
   return (
@@ -84,7 +84,7 @@ function MetronomeButton() {
   const [flash, setFlash] = useState(false);
   const firstBeat = useRef(recordBeat);
 
-  // Flash green on each metronome beat while recording (source_code.jsx:960-968).
+  // Flash green on each metronome beat while recording (refs/source_code.jsx:960-968).
   useEffect(() => {
     if (recordBeat === firstBeat.current) return;
     setFlash(true);
@@ -135,7 +135,7 @@ function TempoControl() {
     setText(String(next));
   };
 
-  // TAP: average the intervals of taps within the last 3 s (source_code.jsx:1187-1203).
+  // TAP: average the intervals of taps within the last 3 s (refs/source_code.jsx:1187-1203).
   const taps = useRef<number[]>([]);
   const tap = () => {
     const { bpm: tapped, recent } = tapTempo(taps.current, performance.now());

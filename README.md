@@ -2,7 +2,7 @@
 
 A drum-pad loop recorder in the browser. Play a grid of synthesized drum pads with the mouse or the computer keyboard, press **REC**, and your hits loop back in time with the tempo. All the sound is made live with Web Audio: there are no sample files.
 
-The design comes from a browser prototype, [source_code.jsx](source_code.jsx).
+The design comes from a browser prototype, [refs/source_code.jsx](refs/source_code.jsx).
 
 ## Running it
 

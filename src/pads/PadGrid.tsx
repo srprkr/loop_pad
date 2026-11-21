@@ -4,7 +4,7 @@ import { gridColumns } from "../data/defaultPads";
 import { themeFor } from "../data/themes";
 import { useFlashStore, useAppStore } from "../state/store";
 
-// source_code.jsx:1243-1315.
+// refs/source_code.jsx:1243-1315.
 
 /** `reservedHeight`: space below the grid (EDIT bar, inspector) the square must leave free. */
 export function PadGrid({ reservedHeight }: { reservedHeight: number }) {

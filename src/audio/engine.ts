@@ -1,5 +1,5 @@
 // The Loop Pad audio engine: the prototype's Web Audio synth plus the loop transport
-// (source_code.jsx:910-1046).
+// (refs/source_code.jsx:910-1046).
 //
 //   - REC: 3-beat count-in, then exactly 4 bars (64 sixteenth steps) of recording, then the loop
 //     plays back. Hits snap to the nearest 16th; a hit in the last half step of the count-in

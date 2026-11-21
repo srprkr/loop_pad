@@ -3,7 +3,7 @@
 import { DEFAULT_PADS } from "../data/defaultPads";
 import type { KitState, Settings, UiState } from "../types";
 
-// Ranges and defaults follow the prototype (source_code.jsx:212-217).
+// Ranges and defaults follow the prototype (refs/source_code.jsx:212-217).
 export const BPM_RANGE = { min: 60, max: 200 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {

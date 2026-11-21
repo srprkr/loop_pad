@@ -1,4 +1,4 @@
-// Default pad layouts for each grid size (source_code.jsx:142-199).
+// Default pad layouts for each grid size (refs/source_code.jsx:142-199).
 
 import type { GridSize, PadConfig } from "../types";
 

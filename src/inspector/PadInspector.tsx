@@ -4,7 +4,7 @@ import { KIT_SOUNDS, PAD_VOLUME_RANGE, PITCH_RANGE, findSound } from "../data/ki
 import { COLOR_THEMES, THEME_KEYS, themeFor } from "../data/themes";
 import { useAppStore, useSelectedPad } from "../state/store";
 
-// source_code.jsx:1332-1487. Shown while EDIT is on; edits the selected pad of the current grid.
+// refs/source_code.jsx:1332-1487. Shown while EDIT is on; edits the selected pad of the current grid.
 
 export function PadInspector() {
   const { pad } = useSelectedPad();
@@ -36,7 +36,7 @@ function PadFaders() {
   const update = useAppStore((s) => s.updateSelectedPad);
   const preview = useAppStore((s) => s.previewSelectedPad);
 
-  // Releasing a fader auditions the pad; double-click resets and auditions (source_code.jsx:1348-1423).
+  // Releasing a fader auditions the pad; double-click resets and auditions (refs/source_code.jsx:1348-1423).
   const pitch = pad.pitchSemitones;
   return (
     <Card className="items-center justify-around p-3">
@@ -112,7 +112,7 @@ function SampleSelect() {
           onChange={(e) => {
             const sound = findSound(e.target.value);
             if (!sound) return;
-            // Choosing a sound renames the pad to it (source_code.jsx:1434-1443).
+            // Choosing a sound renames the pad to it (refs/source_code.jsx:1434-1443).
             update({ soundType: sound.id, name: sound.label, category: sound.category });
             preview({ soundType: sound.id });
           }}

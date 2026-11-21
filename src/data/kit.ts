@@ -1,4 +1,4 @@
-// The built-in kit: 25 synthesized sounds (source_code.jsx:84-121).
+// The built-in kit: 25 synthesized sounds (refs/source_code.jsx:84-121).
 // Sound ids are shared with the C++ engine (engine/src/DrumKit.cpp); keep both lists in the same order.
 
 export type SoundCategory = "kick" | "snare" | "hihat" | "perc" | "tom" | "fx";

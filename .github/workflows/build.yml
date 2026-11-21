@@ -5,9 +5,9 @@ name: Build
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md']
+    paths-ignore: ['**.md', 'refs/**']
   pull_request:
-    paths-ignore: ['**.md']
+    paths-ignore: ['**.md', 'refs/**']
   workflow_dispatch:
 
 permissions:

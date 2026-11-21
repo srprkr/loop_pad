@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useAppStore } from "../state/store";
 
-// Each pad's `key` triggers it (source_code.jsx:1048-1065):
+// Each pad's `key` triggers it (refs/source_code.jsx:1048-1065):
 //   3x3  1 2 3 / Q W E / A S D
 //   4x4  1 2 3 4 / Q W E R / A S D F / Z X C V
 //   5x5  1 2 3 4 5 / Q W E R T / A S D F G / Z X C V B / Y U I O P

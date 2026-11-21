@@ -61,7 +61,7 @@ export default function App() {
           className="relative origin-top-left select-none p-3"
           style={{ width: DESIGN_WIDTH, height: DESIGN_HEIGHT, transform: `scale(${scale})` }}
         >
-          {/* Device frame (source_code.jsx:1077) */}
+          {/* Device frame (refs/source_code.jsx:1077) */}
           <div className="flex h-full w-full flex-col gap-5 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
             <TopBar />
             <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-5 [container-type:size]">

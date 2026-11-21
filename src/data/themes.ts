@@ -1,4 +1,4 @@
-// Pad colour themes (source_code.jsx:15-76). Class names are written out in full so Tailwind
+// Pad colour themes (refs/source_code.jsx:15-76). Class names are written out in full so Tailwind
 // finds them when it scans the source; never build them from string fragments.
 
 export type ColorThemeKey =
