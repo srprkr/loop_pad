@@ -2,9 +2,9 @@
 ; Installs the VST3 where every DAW looks for it, plus the Standalone app.
 ;
 ; Every name comes from the identity block in CMakeLists.txt; CI passes them in. By hand:
-;   ISCC /DAppName="Plugin Starter" /DAppFileName=PluginStarter /DAppPublisher="Your Company" ^
+;   ISCC /DAppName="Loop Pad" /DAppFileName=LoopPad /DAppPublisher="Your Company" ^
 ;        /DAppId=<PRODUCT_WINDOWS_APP_ID> /DAppVersion=0.1.0 ^
-;        /DBuildDir=<repo>\build\plugin\PluginStarter_artefacts\Release Installer.iss
+;        /DBuildDir=<repo>\build\plugin\LoopPad_artefacts\Release Installer.iss
 ; MicrosoftEdgeWebview2Setup.exe must be in this folder (the workflow downloads it).
 
 #ifndef AppVersion

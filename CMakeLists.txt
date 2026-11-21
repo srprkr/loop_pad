@@ -4,14 +4,14 @@ cmake_minimum_required(VERSION 3.22)
 # Product identity. This block is the only place a new plugin needs to rename.
 # CI and the installer read these lines too (scripts/product-info.sh), so keep them
 # as plain one-line set() calls with quoted values.
-set(PRODUCT_NAME "Plugin Starter")             # shown in DAWs, window titles and folders
-set(PRODUCT_TARGET "PluginStarter")            # CMake target and file names; no spaces
+set(PRODUCT_NAME "Loop Pad")                   # shown in DAWs, window titles and folders
+set(PRODUCT_TARGET "LoopPad")                  # CMake target and file names; no spaces
 set(PRODUCT_VERSION "0.1.0")
 set(PRODUCT_COMPANY "Your Company")
-set(PRODUCT_BUNDLE_ID "com.yourcompany.pluginstarter")
+set(PRODUCT_BUNDLE_ID "com.yourcompany.looppad")
 set(PRODUCT_MANUFACTURER_CODE "Ycmp")          # 4 chars, first one uppercase; same for all your plugins
-set(PRODUCT_PLUGIN_CODE "Pst1")                # 4 chars, unique per plugin, at least one uppercase
-set(PRODUCT_WINDOWS_APP_ID "B3E0C6A2-5F14-4D7B-9A8E-2C61F07D9E35") # Windows installer AppId; new GUID per product, then never change it
+set(PRODUCT_PLUGIN_CODE "Lpd1")                # 4 chars, unique per plugin, at least one uppercase
+set(PRODUCT_WINDOWS_APP_ID "DFAE9896-DEF7-4DD4-9675-7D8C4A477038") # Windows installer AppId; new GUID per product, then never change it
 #==============================================================================
 
 # Universal binary by default on macOS (must be set before project()).

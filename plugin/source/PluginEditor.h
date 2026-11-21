@@ -17,8 +17,8 @@ public:
     void resized() override;
 
     // Must match DESIGN_WIDTH / DESIGN_HEIGHT in ui/src/App.tsx.
-    static constexpr int designWidth = 1024;
-    static constexpr int designHeight = 600;
+    static constexpr int designWidth = 720;
+    static constexpr int designHeight = 1080;
 
 private:
     /** Keeps the web view on our page: dropped files or links can't navigate it away. */

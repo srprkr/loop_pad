@@ -50,7 +50,7 @@ juce_add_plugin(${PRODUCT_TARGET}
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     NEEDS_WEB_BROWSER TRUE   # Linux: WebKitGTK headers
     NEEDS_WEBVIEW2 TRUE      # Windows: statically linked WebView2 loader
-    VST3_CATEGORIES Instrument Sampler
+    VST3_CATEGORIES Instrument Drum
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 target_sources(${PRODUCT_TARGET} PRIVATE

@@ -53,9 +53,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     if (auto* sizeConstrainer = getConstrainer())
     {
         sizeConstrainer->setFixedAspectRatio ((double) designWidth / designHeight);
-        sizeConstrainer->setSizeLimits (designWidth * 3 / 4, designHeight * 3 / 4, designWidth * 2, designHeight * 2);
+        sizeConstrainer->setSizeLimits (designWidth * 2 / 3, designHeight * 2 / 3, designWidth * 2, designHeight * 2);
     }
-    setSize (designWidth, designHeight);
+    // The design is tall (portrait); open a little smaller so it fits a 1080p screen with a DAW around it.
+    setSize (designWidth * 5 / 6, designHeight * 5 / 6);
 }
 
 PluginEditor::~PluginEditor()

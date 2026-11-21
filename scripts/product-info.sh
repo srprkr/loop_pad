@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prints the product identity block from CMakeLists.txt as KEY=value lines, e.g.
-#   PRODUCT_NAME=Plugin Starter
+#   PRODUCT_NAME=Loop Pad
 #   PRODUCT_VERSION=0.1.0
 # CI appends this to $GITHUB_ENV so every step uses the same names as the build.
 #
