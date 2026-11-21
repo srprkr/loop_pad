@@ -31,11 +31,3 @@ export function useToggleParam(id: ParamId): [boolean, (on: boolean) => void] {
   const { value, set } = useParam(id);
   return [value >= 0.5, useCallback((on: boolean) => set(on ? 1 : 0), [set])];
 }
-
-/** Choice parameter mapped onto a typed list of options. */
-export function useChoiceParam<T>(id: ParamId, options: readonly T[]): [T, (option: T) => void] {
-  const { value, set } = useParam(id);
-  const index = Math.min(options.length - 1, Math.max(0, Math.round(value)));
-  const select = useCallback((option: T) => set(Math.max(0, options.indexOf(option))), [options, set]);
-  return [options[index], select];
-}

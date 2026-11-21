@@ -1,7 +1,8 @@
 // Default values used before the plugin answers, and by the browser mock backend.
 // The plugin's own parameter list (Parameters.cpp) is authoritative at runtime.
 
-import type { ParameterInfo, UiState } from "../bridge/types";
+import type { KitState, ParameterInfo, UiState } from "../bridge/types";
+import { DEFAULT_PADS } from "../data/defaultPads";
 import type { ParamId } from "./parameterIds";
 
 const float = (id: ParamId, name: string, min: number, max: number, defaultValue: number): ParameterInfo => ({
@@ -13,41 +14,20 @@ const int = (id: ParamId, name: string, min: number, max: number, defaultValue: 
 const bool = (id: ParamId, name: string, defaultValue: boolean): ParameterInfo => ({
   id, name, kind: "bool", min: 0, max: 1, defaultValue: Number(defaultValue), value: Number(defaultValue),
 });
-const choice = (id: ParamId, name: string, choices: string[], defaultIndex: number): ParameterInfo => ({
-  id, name, kind: "choice", min: 0, max: choices.length - 1, defaultValue: defaultIndex, value: defaultIndex, choices,
-});
 
 export const DEFAULT_PARAMETERS: ParameterInfo[] = [
-  float("masterGain", "Master", 0, 2, 1),
-  choice("playbackMode", "Playback Mode", ["One Shot", "Loop"], 0),
-  float("startPos", "Start", 0, 1, 0),
-  float("endPos", "End", 0, 1, 1),
-  float("loopStartPos", "Loop Start", 0, 1, 0),
-  float("loopEndPos", "Loop End", 0, 1, 1),
-  float("loopCrossfade", "Loop Crossfade", 0, 0.5, 0.02),
-  int("rootNote", "Root Note", 24, 96, 60),
-  bool("preserveSpeed", "Preserve Speed", true),
-  bool("tempoSync", "Sync To Host Tempo", true),
-  int("sampleBpm", "Sample BPM", 40, 240, 120),
-  float("attack", "Attack", 0.001, 2, 0.001),
-  float("decay", "Decay", 0.01, 5, 0.8),
-  float("sustain", "Sustain", 0, 1, 0.8),
-  float("release", "Release", 0.01, 5, 0.5),
-  bool("hpfEnabled", "High Pass", false),
-  float("hpfCutoff", "High Pass Cutoff", 20, 20000, 20),
-  float("hpfResonance", "High Pass Emphasis", 0.1, 10, 1),
-  choice("hpfSlope", "High Pass Slope", ["12 dB", "18 dB", "24 dB"], 0),
-  bool("lpfEnabled", "Low Pass", false),
-  float("lpfCutoff", "Low Pass Cutoff", 20, 20000, 20000),
-  float("lpfResonance", "Low Pass Emphasis", 0.1, 10, 1),
-  choice("lpfSlope", "Low Pass Slope", ["12 dB", "18 dB", "24 dB"], 2),
+  float("masterVolume", "Volume", 0, 1, 0.85),
+  bool("mute", "Mute", false),
+  int("bpm", "Tempo", 60, 200, 120),
+  bool("metronome", "Metronome", true),
 ];
 
+export const DEFAULT_KIT: KitState = {
+  gridSize: "4x4",
+  pads: DEFAULT_PADS,
+};
+
 export const DEFAULT_UI_STATE: UiState = {
-  tab: "playback",
-  waveformZoom: 1,
-  expandedWaveform: false,
-  showGrid: false,
-  snapToGrid: false,
-  endLinked: false,
+  inspectorOpen: false,
+  selectedPad: { "3x3": 0, "4x4": 0, "5x5": 0 },
 };

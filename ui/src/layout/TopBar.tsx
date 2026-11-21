@@ -1,0 +1,219 @@
+import { useEffect, useRef, useState } from "react";
+import { Circle, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { pluginApi } from "../bridge/api";
+import { Slider } from "../components/Slider";
+import { GRID_SIZES } from "../data/defaultPads";
+import { useParam, useToggleParam } from "../state/hooks";
+import { BPM_RANGE } from "../state/parameterIds";
+import { usePluginStore, useTelemetryStore } from "../state/pluginStore";
+
+// source_code.jsx:1080-1240. Grid size (left), transport (centre), master volume (right).
+
+export function TopBar() {
+  return (
+    <div className="flex w-full items-center justify-between gap-3 whitespace-nowrap rounded-xl border border-zinc-800/80 bg-zinc-950/80 px-4 py-2.5">
+      <GridSizeToggle />
+      <Transport />
+      <VolumeControl />
+    </div>
+  );
+}
+
+function GridSizeToggle() {
+  const gridSize = usePluginStore((s) => s.kit.gridSize);
+  const setGridSize = usePluginStore((s) => s.setGridSize);
+
+  return (
+    <div className="flex shrink-0 items-center rounded-lg border border-zinc-800 bg-zinc-900 p-1">
+      {GRID_SIZES.map((size) => (
+        <button
+          key={size}
+          onClick={() => setGridSize(size)}
+          className={`rounded-md px-2.5 py-1 font-mono text-xs transition-all ${
+            gridSize === size ? "bg-indigo-600 font-semibold text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          {size}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+//==============================================================================
+function Transport() {
+  const mode = useTelemetryStore((s) => s.mode);
+  const recording = mode === "countIn" || mode === "recording";
+  const playing = mode === "playing";
+
+  return (
+    <div className="mx-auto flex shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1">
+      <button
+        onClick={() => void pluginApi.record()}
+        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-medium transition-all ${
+          recording ? "animate-pulse bg-rose-600 text-white" : "bg-zinc-800 text-rose-400 hover:bg-zinc-700"
+        }`}
+        title="Record 4 measures (with a 3-beat count-in)"
+      >
+        <Circle className="h-3.5 w-3.5 fill-current" />
+        <span>{mode === "countIn" ? "COUNT" : "REC"}</span>
+      </button>
+
+      <button
+        onClick={() => void pluginApi.togglePlay()}
+        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs font-medium transition-all ${
+          playing ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+        }`}
+        title={playing ? "Pause loop" : "Play loop"}
+      >
+        {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+        <span>{playing ? "PAUSE" : "PLAY"}</span>
+      </button>
+
+      <MetronomeButton />
+      <TempoControl />
+    </div>
+  );
+}
+
+function MetronomeButton() {
+  const [enabled, setEnabled] = useToggleParam("metronome");
+  const recordBeat = useTelemetryStore((s) => s.recordBeat);
+  const [flash, setFlash] = useState(false);
+  const firstBeat = useRef(recordBeat);
+
+  // Flash green on each metronome beat while recording (source_code.jsx:960-968).
+  useEffect(() => {
+    if (recordBeat === firstBeat.current) return;
+    setFlash(true);
+    const timer = window.setTimeout(() => setFlash(false), 110);
+    return () => window.clearTimeout(timer);
+  }, [recordBeat]);
+
+  return (
+    <button
+      onClick={() => setEnabled(!enabled)}
+      className={`rounded-md border p-1.5 transition-all ${
+        flash
+          ? "scale-105 border-emerald-400 bg-emerald-500 text-black shadow-lg shadow-emerald-500/50"
+          : enabled
+            ? "border-blue-500 bg-blue-600 text-white hover:bg-blue-500"
+            : "border-transparent bg-zinc-800/40 text-zinc-500 opacity-50"
+      }`}
+      title="Click to toggle metronome audio"
+    >
+      <svg viewBox="0 0 100 100" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M 46 22 C 40 22 36 28 34 38 L 22 74 C 20 80 24 86 32 86 L 68 86 C 74 86 76 80 74 74 L 68 66" />
+        <line x1="44" y1="76" x2="78" y2="28" strokeWidth="9" />
+        <circle cx="82" cy="22" r="7" fill="currentColor" stroke="none" />
+      </svg>
+    </button>
+  );
+}
+
+const clampBpm = (bpm: number) => Math.max(BPM_RANGE.min, Math.min(BPM_RANGE.max, Math.round(bpm)));
+
+function TempoControl() {
+  const bpm = useParam("bpm");
+  const hostSynced = useTelemetryStore((s) => s.hostSynced);
+  const hostBpm = useTelemetryStore((s) => s.bpm);
+  const shown = hostSynced ? Math.round(hostBpm) : bpm.value;
+
+  // Typed text is committed on Enter / blur, so typing "1" on the way to "140" doesn't clamp to 60.
+  const [text, setText] = useState(String(shown));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(String(shown));
+  }, [shown]);
+
+  const commit = () => {
+    editing.current = false;
+    const parsed = parseInt(text, 10);
+    const next = Number.isFinite(parsed) ? clampBpm(parsed) : bpm.value;
+    bpm.set(next);
+    setText(String(next));
+  };
+
+  // TAP: average the intervals of taps within the last 3 s (source_code.jsx:1187-1203).
+  const taps = useRef<number[]>([]);
+  const tap = () => {
+    const now = performance.now();
+    const recent = taps.current.filter((t) => now - t < 3000);
+    recent.push(now);
+    taps.current = recent;
+    if (recent.length < 2) return;
+    const avgMs = (recent[recent.length - 1] - recent[0]) / (recent.length - 1);
+    bpm.set(clampBpm(60000 / avgMs));
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 border-l border-zinc-800 pl-1.5">
+      <input
+        type="number"
+        min={BPM_RANGE.min}
+        max={BPM_RANGE.max}
+        value={text}
+        disabled={hostSynced}
+        title={hostSynced ? "Following the host tempo" : "Tempo (BPM)"}
+        onFocus={() => (editing.current = true)}
+        onChange={(e) => {
+          setText(e.target.value);
+          // Spinner arrows and arrow keys change the value in steps of 1; apply those at once.
+          const parsed = parseInt(e.target.value, 10);
+          if (Math.abs(parsed - bpm.value) === 1) bpm.set(clampBpm(parsed));
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        className="w-14 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-center font-mono text-xs text-zinc-100 focus:border-indigo-500 focus:outline-none disabled:text-zinc-400"
+      />
+      <button
+        onClick={tap}
+        disabled={hostSynced}
+        className="rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-semibold text-zinc-300 transition-colors hover:bg-zinc-700 active:bg-indigo-600 active:text-white disabled:opacity-50"
+        title="Tap rhythmically to set BPM"
+      >
+        TAP
+      </button>
+    </div>
+  );
+}
+
+//==============================================================================
+function VolumeControl() {
+  const volume = useParam("masterVolume");
+  const [muted, setMuted] = useToggleParam("mute");
+
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        onClick={() => setMuted(!muted)}
+        className="rounded-lg border border-zinc-700/60 bg-zinc-800/80 p-1.5 text-zinc-300 transition-colors hover:bg-zinc-700"
+        title={muted ? "Unmute" : "Mute"}
+      >
+        {muted ? <VolumeX className="h-4 w-4 text-rose-400" /> : <Volume2 className="h-4 w-4 text-zinc-300" />}
+      </button>
+      <div className="flex w-16 flex-col gap-1">
+        <div className="flex justify-between font-mono text-[9px] text-zinc-400">
+          <span>VOL</span>
+          <span>{muted ? "0%" : `${Math.round(volume.value * 100)}%`}</span>
+        </div>
+        <Slider
+          orientation="horizontal"
+          length={64}
+          min={0}
+          max={1}
+          step={0.01}
+          value={muted ? 0 : volume.value}
+          onBegin={volume.beginGesture}
+          onEnd={volume.endGesture}
+          onChange={(v) => {
+            volume.set(v);
+            if (muted) setMuted(false); // moving the slider unmutes
+          }}
+        />
+      </div>
+    </div>
+  );
+}

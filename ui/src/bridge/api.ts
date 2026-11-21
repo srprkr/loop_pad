@@ -1,15 +1,8 @@
 // Typed API to the plugin. Inside the plugin this talks to JUCE; in a normal browser
-// (`npm run dev`) it falls back to an in-memory mock so the UI can be developed standalone.
+// (`npm run dev`) it falls back to an in-memory mock with a Web Audio synth, so the UI can be
+// developed (and heard) standalone.
 
-import type {
-  InitialState,
-  OperationResult,
-  PresetList,
-  SampleSlot,
-  SampleSlots,
-  Telemetry,
-  UiState,
-} from "./types";
+import type { InitialState, KitState, Telemetry, UiState } from "./types";
 import type { ParamId } from "../state/parameterIds";
 import { callNative, isRunningInPlugin, onNativeEvent } from "./juceBackend";
 import { createMockBackend } from "./mockBackend";
@@ -17,7 +10,6 @@ import { createMockBackend } from "./mockBackend";
 export interface PluginEvents {
   parameters: Partial<Record<ParamId, number>>;
   telemetry: Telemetry;
-  samples: SampleSlots;
   stateReplaced: unknown;
 }
 
@@ -35,25 +27,24 @@ export const pluginApi = {
 
   getInitialState: () => backend.call<InitialState>("getInitialState"),
   setUiState: (state: UiState) => backend.call<void>("setUiState", state),
+  setKit: (kit: KitState) => backend.call<void>("setKit", kit),
 
   setParameter: (id: ParamId, value: number) => backend.call<void>("setParameter", id, value),
   beginGesture: (id: ParamId) => backend.call<void>("beginGesture", id),
   endGesture: (id: ParamId) => backend.call<void>("endGesture", id),
 
-  browseForSample: (slot: SampleSlot) => backend.call<OperationResult>("browseForSample", slot),
-  loadDroppedSample: (slot: SampleSlot, fileName: string, base64: string) =>
-    backend.call<OperationResult>("loadDroppedSample", slot, fileName, base64),
-  clearSample: (slot: SampleSlot) => backend.call<void>("clearSample", slot),
+  /** Plays a pad. While recording, the hit is also quantized into the loop. */
+  triggerPad: (soundType: string, pitchSemitones: number, volume: number, padKey: string) =>
+    backend.call<void>("triggerPad", soundType, pitchSemitones, volume, padKey),
+  /** Plays a sound without recording it (inspector auditions). */
+  previewSound: (soundType: string, pitchSemitones: number, volume: number) =>
+    backend.call<void>("previewSound", soundType, pitchSemitones, volume),
 
-  noteOn: (note: number, velocity = 100) => backend.call<void>("noteOn", note, velocity),
-  noteOff: (note: number) => backend.call<void>("noteOff", note),
-  allNotesOff: () => backend.call<void>("allNotesOff"),
-
-  listPresets: () => backend.call<PresetList>("listPresets"),
-  savePreset: (name: string) => backend.call<PresetList | OperationResult>("savePreset", name),
-  loadPreset: (id: string) => backend.call<OperationResult>("loadPreset", id),
-  setPresetFavorite: (id: string, favorite: boolean) => backend.call<PresetList>("setPresetFavorite", id, favorite),
-  deletePreset: (id: string) => backend.call<PresetList>("deletePreset", id),
+  /** REC: starts the count-in, or stops if counting in / recording. */
+  record: () => backend.call<void>("record"),
+  /** PLAY / PAUSE. Playback always starts from step 0. */
+  togglePlay: () => backend.call<void>("togglePlay"),
+  stop: () => backend.call<void>("stop"),
 
   on: backend.on,
 };
