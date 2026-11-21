@@ -11,7 +11,7 @@
 // exactly on their steps even though the scheduler itself runs on a timer.
 
 import type { LoopNote, PadHit, Settings, Telemetry } from "../types";
-import { actionsForStep, addHit, displayStep, modeAt, quantizeHit, startStep } from "./transport";
+import { STEPS_PER_BEAT, actionsForStep, addHit, displayStep, modeAt, quantizeHit, startStep } from "./transport";
 import { createNoiseBuffer, playMetronomeClick, triggerSound } from "./webSynth";
 
 const LOOKAHEAD_SEC = 0.1;
@@ -83,7 +83,7 @@ export function createAudioEngine(initial: Settings): AudioEngine {
   const loopListeners = new Set<(loop: LoopNote[]) => void>();
   const loopChanged = () => loopListeners.forEach((fn) => fn(loop));
 
-  const secondsPerStep = () => 60 / settings.bpm / 4;
+  const secondsPerStep = () => 60 / settings.bpm / STEPS_PER_BEAT;
   const positionAt = (time: number) => nextStep - (nextStepTime - time) / secondsPerStep();
   const run = () => ({ running, recordRun });
   const currentMode = () => (running && audio ? modeAt(run(), positionAt(audio.ctx.currentTime)) : "idle");

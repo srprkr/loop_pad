@@ -65,7 +65,7 @@ src/
 | A sound, or add one | Its recipe in [src/audio/webSynth.ts](src/audio/webSynth.ts) and its entry in [src/data/kit.ts](src/data/kit.ts) (same id) |
 | Default pad layouts | [src/data/defaultPads.ts](src/data/defaultPads.ts) |
 | Pad colours | [src/data/themes.ts](src/data/themes.ts) |
-| Loop length, count-in, quantizing, metronome pattern | [src/audio/transport.ts](src/audio/transport.ts) |
+| Time signature (beats per bar), loop length in bars, count-in beats, quantizing, metronome pattern | [src/audio/transport.ts](src/audio/transport.ts) |
 | Defaults, BPM range | [src/state/defaults.ts](src/state/defaults.ts) |
 | Layout size | `DESIGN_WIDTH` / `DESIGN_HEIGHT` in [src/App.tsx](src/App.tsx). The layout is designed at 720 × 1080 and scaled to fit the window. |
 

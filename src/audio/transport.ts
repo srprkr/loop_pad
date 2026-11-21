@@ -1,12 +1,21 @@
 // The loop transport's rules as pure functions: no AudioContext and no timers, so they can be
 // unit-tested. engine.ts applies them on the Web Audio clock.
 //
-// Positions are in 16th-note steps from the start of the loop; the count-in is steps -12..-1.
+// Positions are in steps (16th notes in 4/4) from the start of the loop; the count-in is the
+// steps before 0 (-12..-1 with the values below).
 
 import type { LoopNote, TransportMode } from "../types";
 
-export const LOOP_STEPS = 64; // 4 bars of 16ths
-export const COUNT_IN_STEPS = 12; // 3 beats
+// The meter and loop length. Everything below is derived from these, so changing one (3/4, say)
+// changes the metronome accents, the count-in and the loop together.
+export const STEPS_PER_BEAT = 4; // 16th notes
+export const BEATS_PER_BAR = 4; // 4/4
+export const LOOP_BARS = 4;
+export const COUNT_IN_BEATS = 3;
+
+export const STEPS_PER_BAR = STEPS_PER_BEAT * BEATS_PER_BAR;
+export const LOOP_STEPS = STEPS_PER_BAR * LOOP_BARS; // 64
+export const COUNT_IN_STEPS = STEPS_PER_BEAT * COUNT_IN_BEATS; // 12
 
 export interface RunState {
   running: boolean;
@@ -55,7 +64,7 @@ export interface StepActions {
 /** What happens when the transport reaches `step` (an absolute step of the run). */
 export function actionsForStep(recordRun: boolean, step: number, metronome: boolean): StepActions {
   if (step < 0) {
-    const onBeat = step % 4 === 0;
+    const onBeat = (step + COUNT_IN_STEPS) % STEPS_PER_BEAT === 0;
     return {
       click: onBeat && metronome ? { countIn: true, accent: step === -COUNT_IN_STEPS } : null,
       recordBeat: false,
@@ -66,9 +75,9 @@ export function actionsForStep(recordRun: boolean, step: number, metronome: bool
 
   const loopStep = step % LOOP_STEPS;
   const recordingPass = recordRun && step < LOOP_STEPS;
-  const onBeat = loopStep % 4 === 0;
+  const onBeat = loopStep % STEPS_PER_BEAT === 0;
   return {
-    click: onBeat && metronome ? { countIn: false, accent: loopStep % 16 === 0 } : null,
+    click: onBeat && metronome ? { countIn: false, accent: loopStep % STEPS_PER_BAR === 0 } : null,
     recordBeat: onBeat && recordingPass,
     startsTake: recordingPass && step === 0,
     playStep: recordingPass ? null : loopStep,
@@ -83,13 +92,17 @@ export function displayStep(mode: TransportMode, position: number): number {
 }
 
 /**
- * The count-in number to show for a displayed step: 3, 2, 1 on the three count-in beats, then
- * "GO!" for the first beat of the recording, otherwise null.
+ * The count-in number to show for a displayed step: the beats left (3, 2, 1) on each count-in
+ * beat, then "GO!" for the first beat of the recording, otherwise null.
  */
 export function countdownLabel(mode: TransportMode, step: number): string | null {
-  // Clamped because the step reads -13 for the 50 ms before the first click is due.
-  if (mode === "countIn") return String(Math.min(COUNT_IN_STEPS / 4, Math.ceil(-step / 4)));
-  if (mode === "recording" && step < 4) return "GO!";
+  if (mode === "countIn") {
+    // Which count-in beat this is, from 0. Not below 0: for the 50 ms before the first click is
+    // due, the step reads one before the count-in starts.
+    const beat = Math.max(0, Math.floor((step + COUNT_IN_STEPS) / STEPS_PER_BEAT));
+    return String(COUNT_IN_BEATS - beat);
+  }
+  if (mode === "recording" && step < STEPS_PER_BEAT) return "GO!";
   return null;
 }
 

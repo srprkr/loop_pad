@@ -4,6 +4,7 @@
 // what is valid and fills in the rest with defaults, so an old or hand-edited save can't break
 // the app.
 
+import { LOOP_STEPS } from "../audio/transport";
 import { findSound } from "../data/kit";
 import type { GridSize, KitState, LoopNote, Settings, UiState } from "../types";
 import { BPM_RANGE, DEFAULT_KIT, DEFAULT_SETTINGS, DEFAULT_UI_STATE } from "./defaults";
@@ -70,7 +71,7 @@ export function parseSavedState(text: string | null): SavedState {
   };
 
   const loop = Array.isArray(saved.loop)
-    ? saved.loop.filter((n) => Number.isInteger(n?.step) && n.step >= 0 && n.step < 64 && findSound(n.soundType))
+    ? saved.loop.filter((n) => Number.isInteger(n?.step) && n.step >= 0 && n.step < LOOP_STEPS && findSound(n.soundType))
     : [];
 
   return { settings, kit: { gridSize, pads }, ui, loop };
