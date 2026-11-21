@@ -11,16 +11,22 @@
 // exactly on their steps even though the scheduler itself runs on a timer.
 
 import type { LoopNote, PadHit, Settings, Telemetry } from "../types";
+import { LIMITER_PROCESSOR } from "./limiter";
+import limiterWorkletUrl from "./limiter.worklet.ts?worker&url";
 import { STEPS_PER_BEAT, actionsForStep, addHit, displayStep, modeAt, quantizeHit, startStep } from "./transport";
 import { createNoiseBuffer, playMetronomeClick, triggerSound } from "./webSynth";
 
 const LOOKAHEAD_SEC = 0.1;
 
-// Taps are scheduled this far ahead of currentTime. Firefox's currentTime can lag up to one
-// render chunk (~10.7 ms) behind what it has already played, so a sound scheduled "now" starts
-// late with its decay already under way: short sounds came out up to 10 dB quieter at random.
-// 15 ms covers the chunk with a margin; measured, taps then come out at the same level every time.
-const LIVE_LEAD_SEC = 0.015;
+/**
+ * How far ahead of currentTime a tap is scheduled. Firefox's currentTime can lag up to one render
+ * chunk (~10.7 ms) behind what it has already played, so a sound scheduled "now" started late
+ * with its decay already under way: short sounds came out up to 10 dB quieter at random. 15 ms
+ * covers the chunk with a margin. Chromium's currentTime doesn't lag, so it gets no added delay.
+ * (Firefox on iOS is WebKit underneath and doesn't say "Firefox", so it's left out.)
+ */
+export const liveLeadSec = (userAgent: string) => (/\bFirefox\//.test(userAgent) ? 0.015 : 0);
+const LIVE_LEAD_SEC = liveLeadSec(typeof navigator === "undefined" ? "" : navigator.userAgent);
 const SCHEDULE_INTERVAL_MS = 25;
 const TELEMETRY_INTERVAL_MS = 33;
 
@@ -58,16 +64,35 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
   const masterLevel = () => (settings.muted ? 0 : settings.volume);
 
+  function insertLimiter(ctx: AudioContext, master: GainNode, output: GainNode) {
+    // audioWorklet is missing on plain-http pages other than localhost (e.g. a phone on the LAN):
+    // then it plays without the limiter.
+    ctx.audioWorklet
+      ?.addModule(limiterWorkletUrl)
+      .then(() => {
+        const limiter = new AudioWorkletNode(ctx, LIMITER_PROCESSOR);
+        limiter.connect(output);
+        master.connect(limiter);
+        master.disconnect(output); // same task as the connect, so the swap is seamless
+      })
+      .catch((e) => console.warn("Loop Pad: limiter unavailable, playing without it.", e));
+  }
+
   function getAudio() {
     if (!audio) {
       // iOS: play as media, so the ringer/silent switch doesn't mute the pads (Safari 16.4+).
       const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
       if (session) session.type = "playback";
 
+      // master (volume) -> limiter -> output -> speakers. The limiter's worklet loads
+      // asynchronously, so the first sounds go straight to the output until it's ready.
       const ctx = new AudioContext();
       const master = ctx.createGain();
       master.gain.setValueAtTime(masterLevel(), ctx.currentTime);
-      master.connect(ctx.destination);
+      const output = ctx.createGain();
+      output.connect(ctx.destination);
+      master.connect(output);
+      insertLimiter(ctx, master, output);
       audio = { ctx, master, noise: createNoiseBuffer(ctx) };
     }
     if (audio.ctx.state === "suspended") void audio.ctx.resume();

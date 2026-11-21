@@ -47,6 +47,7 @@ src/
   audio/webSynth.ts            the 25 drum sounds and the metronome click, as Web Audio graphs
   audio/transport.ts           the loop rules as pure functions (modes, quantizing, step actions)
   audio/engine.ts              applies them on the Web Audio clock (count-in, recording, playback)
+  audio/limiter.ts             the output limiter (runs in an AudioWorklet, limiter.worklet.ts)
   state/store.ts               app state (zustand), pad flashes
   state/persistence.ts         saving to and restoring from localStorage
   layout/TopBar.tsx            grid size, transport, tempo, volume
@@ -56,6 +57,7 @@ src/
 ```
 
 - **Sounds** ([webSynth.ts](src/audio/webSynth.ts)). Each pad hit builds a small Web Audio graph: oscillators with pitch sweeps and filtered noise, shaped by exponential envelopes. Pitch scales the recipe's frequencies; it doesn't resample.
+- **Output** ([limiter.ts](src/audio/limiter.ts)). Everything goes through a limiter that keeps the output at or under -1 dBFS, so the kicks, and several hits at once, don't clip. It adds no delay and leaves sounds below that level untouched.
 - **Timing** ([engine.ts](src/audio/engine.ts)). A scheduler runs every 25 ms and queues the next 100 ms of steps on the Web Audio clock, so clicks and loop hits land exactly on the beat. A hit you play is placed at the nearest 16th by comparing its time to that clock. The UI reads the engine's state about 30 times a second.
 
 ### Where things go
@@ -72,7 +74,7 @@ src/
 ## Testing
 
 - **Unit tests** ([src/audio/transport.test.ts](src/audio/transport.test.ts), [src/state/persistence.test.ts](src/state/persistence.test.ts)) check the loop rules without audio: count-in, the 4-bar take and the switch to playback, snapping to the nearest 16th (including the count-in and end-of-loop edges), same-sound replacement, the metronome pattern, TAP tempo, and that saved state is restored and bad saved data is ignored. They take under a second.
-- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. A phone-emulation run checks that the first tap makes sound, taps select pads, the layout fits the screen, transport buttons work by touch and faders reset on a double tap. They run at 200 BPM to stay quick (about 15 s in total) and fail on any page error. Sound is checked by tapping the app's output into an analyser. A level test records the output and checks that every tap of a pad comes out equally loud; it also runs in Firefox, where taps used to drop by up to 10 dB at random. The first run needs the browsers: `npx playwright install chromium firefox`.
+- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. A phone-emulation run checks that the first tap makes sound, taps select pads, the layout fits the screen, transport buttons work by touch and faders reset on a double tap. They run at 200 BPM to stay quick (about 15 s in total) and fail on any page error. Sound is checked by tapping the app's output into an analyser. Level tests record the output and check that every tap of a pad comes out equally loud and that loud hits don't clip; they also run in Firefox, where taps used to drop by up to 10 dB at random. The test browsers are muted, so nothing plays through your speakers; the tests capture the sound inside the page. The first run needs the browsers: `npx playwright install chromium firefox`.
 
 ## CI
 
