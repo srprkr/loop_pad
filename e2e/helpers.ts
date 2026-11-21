@@ -83,3 +83,46 @@ export async function savedLoop(page: Page) {
   const loop = await page.evaluate(() => JSON.parse(localStorage.getItem("loop-pad:v1") ?? "{}").loop ?? []);
   return (loop as { soundType: string; padKey: string; step: number }[]).map((n) => [n.soundType, n.padKey, n.step]);
 }
+
+/**
+    Records every sample the app sends to the speakers, so a test can measure each hit. Call
+    before page.goto(). hitPeaks() then returns the peak of each hit, split on silence.
+*/
+export async function recordAudioOutput(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __samples?: number[] };
+    const connect = AudioNode.prototype.connect as (this: AudioNode, ...args: unknown[]) => unknown;
+    AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
+      if (args[0] instanceof AudioDestinationNode && !w.__samples) {
+        w.__samples = [];
+        const recorder = this.context.createScriptProcessor(1024, 1, 1);
+        recorder.onaudioprocess = (e) => w.__samples!.push(...e.inputBuffer.getChannelData(0));
+        connect.call(this, recorder);
+        connect.call(recorder, this.context.destination);
+      }
+      return connect.apply(this, args);
+    } as typeof AudioNode.prototype.connect;
+  });
+}
+
+/** Peak level (dBFS) of each hit recorded since the last call; hits are separated by > 90 ms of silence. */
+export async function hitPeaks(page: Page): Promise<number[]> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __samples: number[] };
+    const samples = w.__samples.splice(0);
+    const peaks: number[] = [];
+    let peak = 0;
+    let quiet = 0;
+    for (const v of samples) {
+      if (Math.abs(v) > 0.01) {
+        peak = Math.max(peak, Math.abs(v));
+        quiet = 0;
+      } else if (peak && ++quiet > 4000) {
+        peaks.push(peak);
+        peak = 0;
+      }
+    }
+    if (peak) peaks.push(peak);
+    return peaks.map((p) => 20 * Math.log10(p));
+  });
+}

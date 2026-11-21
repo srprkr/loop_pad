@@ -15,6 +15,12 @@ import { STEPS_PER_BEAT, actionsForStep, addHit, displayStep, modeAt, quantizeHi
 import { createNoiseBuffer, playMetronomeClick, triggerSound } from "./webSynth";
 
 const LOOKAHEAD_SEC = 0.1;
+
+// Taps are scheduled this far ahead of currentTime. Firefox's currentTime can lag up to one
+// render chunk (~10.7 ms) behind what it has already played, so a sound scheduled "now" starts
+// late with its decay already under way: short sounds came out up to 10 dB quieter at random.
+// 15 ms covers the chunk with a margin; measured, taps then come out at the same level every time.
+const LIVE_LEAD_SEC = 0.015;
 const SCHEDULE_INTERVAL_MS = 25;
 const TELEMETRY_INTERVAL_MS = 33;
 
@@ -179,13 +185,15 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
     triggerPad(soundType, pitch, volume, padKey) {
       const { ctx, master, noise } = getAudio();
-      triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime);
-      recordHit(soundType, pitch, volume, padKey, ctx.currentTime);
+      // Recorded at the time it sounds, so it's quantized to what you heard.
+      const time = ctx.currentTime + LIVE_LEAD_SEC;
+      triggerSound(ctx, master, noise, soundType, pitch, volume, time);
+      recordHit(soundType, pitch, volume, padKey, time);
     },
 
     previewSound(soundType, pitch, volume) {
       const { ctx, master, noise } = getAudio();
-      triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime);
+      triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime + LIVE_LEAD_SEC);
     },
 
     record() {

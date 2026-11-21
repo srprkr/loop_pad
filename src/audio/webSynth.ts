@@ -1,6 +1,4 @@
 // Web Audio drum synth, ported verbatim from the prototype (refs/source_code.jsx:294-851).
-// Used by the browser mock backend so `npm run dev` makes sound, and as the A/B reference for
-// the C++ engine (engine/src/DrumKit.cpp), which implements the same recipes.
 
 const getPitchMultiplier = (semitones: number) => Math.pow(2, semitones / 12);
 
