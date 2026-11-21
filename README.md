@@ -13,6 +13,8 @@ npm install
 npm run dev        # http://localhost:5173, live-reloads as you edit
 npm run build      # typechecks, then writes the static site to dist/
 npm run preview    # serves dist/ to check the production build
+npm test           # unit tests (Vitest)
+npm run test:e2e   # browser tests (Playwright); starts the dev server if it isn't running
 ```
 
 `dist/` is a plain static site with relative paths, so it can be hosted anywhere (GitHub Pages, Netlify, any web server) or opened from a sub-folder.
@@ -41,8 +43,10 @@ Browsers start audio only after you interact with the page, so click it (or pres
 ```
 src/
   audio/webSynth.ts            the 25 drum sounds and the metronome click, as Web Audio graphs
-  audio/engine.ts              the loop transport (count-in, recording, playback)
-  state/store.ts               app state (zustand), saving to localStorage, pad flashes
+  audio/transport.ts           the loop rules as pure functions (modes, quantizing, step actions)
+  audio/engine.ts              applies them on the Web Audio clock (count-in, recording, playback)
+  state/store.ts               app state (zustand), pad flashes
+  state/persistence.ts         saving to and restoring from localStorage
   layout/TopBar.tsx            grid size, transport, tempo, volume
   pads/PadGrid.tsx             the pads
   inspector/PadInspector.tsx   pitch / volume faders, sound, colour
@@ -59,10 +63,15 @@ src/
 | A sound, or add one | Its recipe in [src/audio/webSynth.ts](src/audio/webSynth.ts) and its entry in [src/data/kit.ts](src/data/kit.ts) (same id) |
 | Default pad layouts | [src/data/defaultPads.ts](src/data/defaultPads.ts) |
 | Pad colours | [src/data/themes.ts](src/data/themes.ts) |
-| Loop length, count-in, quantizing | [src/audio/engine.ts](src/audio/engine.ts) |
+| Loop length, count-in, quantizing, metronome pattern | [src/audio/transport.ts](src/audio/transport.ts) |
 | Defaults, BPM range | [src/state/defaults.ts](src/state/defaults.ts) |
 | Layout size | `DESIGN_WIDTH` / `DESIGN_HEIGHT` in [src/App.tsx](src/App.tsx). The layout is designed at 720 × 1080 and scaled to fit the window. |
 
+## Testing
+
+- **Unit tests** ([src/audio/transport.test.ts](src/audio/transport.test.ts), [src/state/persistence.test.ts](src/state/persistence.test.ts)) check the loop rules without audio: count-in, the 4-bar take and the switch to playback, snapping to the nearest 16th (including the count-in and end-of-loop edges), same-sound replacement, the metronome pattern, TAP tempo, and that saved state is restored and bad saved data is ignored. They take under a second.
+- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. They run at 200 BPM to stay quick (about 10 s in total) and fail on any page error. The first run needs a browser: `npx playwright install chromium`.
+
 ## CI
 
-[.github/workflows/build.yml](.github/workflows/build.yml) typechecks and builds on pull requests and pushes to `main`, on Linux only (the cheapest runner), and uploads `dist/` as an artifact. Docs-only changes are skipped. If jobs fail within seconds with no steps, check **Settings → Billing** on GitHub: Actions stops starting jobs when the minutes or spending limit run out.
+[.github/workflows/build.yml](.github/workflows/build.yml) runs the unit tests, typechecks and builds, uploads `dist/` as an artifact, and runs the browser tests, on pull requests and pushes to `main`. It uses Linux only (the cheapest runner). Docs-only changes are skipped. If jobs fail within seconds with no steps, check **Settings → Billing** on GitHub: Actions stops starting jobs when the minutes or spending limit run out.

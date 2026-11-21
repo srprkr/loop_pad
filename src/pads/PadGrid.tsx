@@ -48,6 +48,8 @@ const Pad = memo(function Pad({ pad, index, gridSize, isSelected, onTrigger }: P
 
   return (
     <button
+      data-pad={pad.key}
+      data-hit={isHit || undefined}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);

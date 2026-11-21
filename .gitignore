@@ -6,3 +6,5 @@ dist/
 # Old native build output (from when this was a plugin)
 build/
 build-*/
+test-results/
+playwright-report/
