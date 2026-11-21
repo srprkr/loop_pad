@@ -165,9 +165,10 @@ export const useAppStore = create<AppState>((set, get) => {
       const { kit } = get();
       const pad = kit.pads[kit.gridSize][index];
       if (!pad) return;
-      get().selectPad(index);
-      flashPad(pad.id, LIVE_FLASH_MS);
+      // Sound first, so nothing in the UI update (selection, flash, saving) runs before it.
       engine.triggerPad(pad.soundType, pad.pitchSemitones, pad.volume, pad.key);
+      flashPad(pad.id, LIVE_FLASH_MS);
+      get().selectPad(index);
     },
 
     previewSelectedPad(overrides) {
