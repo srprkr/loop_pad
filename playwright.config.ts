@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import { MUTED_CHROMIUM_ARGS } from "./e2e/helpers";
 
 // Browser tests: they click through the real app in headless Chromium, with real Web Audio.
-// levels.spec.ts also runs in Firefox, whose audio clock behaves differently.
+// levels.spec.ts and timing.spec.ts also run in Firefox, whose audio clock behaves differently.
 // `npm run test:e2e` starts the dev server (or reuses one that is already running).
 //
 // The browsers are muted: they would otherwise play every test through the speakers. Tests that
@@ -24,7 +24,7 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 720, height: 1080 } } },
     {
       name: "firefox",
-      testMatch: "levels.spec.ts",
+      testMatch: ["levels.spec.ts", "timing.spec.ts"],
       use: { ...devices["Desktop Firefox"], viewport: { width: 720, height: 1080 }, launchOptions: { firefoxUserPrefs: { "media.volume_scale": "0.0" } } },
     },
   ],

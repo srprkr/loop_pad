@@ -26,6 +26,17 @@ const LOOKAHEAD_SEC = 0.1;
  * (Firefox on iOS is WebKit underneath and doesn't say "Firefox", so it's left out.)
  */
 export const liveLeadSec = (userAgent: string) => (/\bFirefox\//.test(userAgent) ? 0.015 : 0);
+/**
+ * How far behind currentTime the sound you hear is: the output latency (to the speakers) plus
+ * the base latency (inside the browser). About 40 ms in both Chromium and Firefox on Linux.
+ * getOutputTimestamp() would be more direct, but Firefox's always says 0. Browsers without
+ * outputLatency (older Safari) count only the base latency.
+ */
+export const heardLatencySec = (ctx: { outputLatency?: number; baseLatency?: number }) => {
+  const seconds = (v: number | undefined) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  return seconds(ctx.outputLatency) + seconds(ctx.baseLatency);
+};
+
 const LIVE_LEAD_SEC = liveLeadSec(typeof navigator === "undefined" ? "" : navigator.userAgent);
 const SCHEDULE_INTERVAL_MS = 25;
 const TELEMETRY_INTERVAL_MS = 33;
@@ -210,10 +221,10 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
     triggerPad(soundType, pitch, volume, padKey) {
       const { ctx, master, noise } = getAudio();
-      // Recorded at the time it sounds, so it's quantized to what you heard.
-      const time = ctx.currentTime + LIVE_LEAD_SEC;
-      triggerSound(ctx, master, noise, soundType, pitch, volume, time);
-      recordHit(soundType, pitch, volume, padKey, time);
+      triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime + LIVE_LEAD_SEC);
+      // You play along to the clicks you hear, which reach the speakers some time after
+      // currentTime. Recorded at what you were hearing, so a tap on the click lands on its step.
+      recordHit(soundType, pitch, volume, padKey, ctx.currentTime - heardLatencySec(ctx));
     },
 
     previewSound(soundType, pitch, volume) {
