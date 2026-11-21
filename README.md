@@ -20,20 +20,21 @@ What you get out of the box:
    - `PRODUCT_WINDOWS_APP_ID` needs a fresh GUID (`uuidgen`). Never change it after the first release.
 
    That one block is enough. CI, the installer, the preset and import folders, the window title and the UI header all read from it ([scripts/product-info.sh](scripts/product-info.sh)).
+
 3. **Replace the example instrument.** The engine is [engine/](engine/) and the UI decks are [ui/src/decks/](ui/src/decks/). Keep the building blocks you need and delete the rest.
 4. **Bump `PRODUCT_VERSION`** for each release.
 
 ### Where things go
 
-| To change… | Edit |
-|---|---|
-| Sound / DSP | [engine/src/SamplerEngine.cpp](engine/src/SamplerEngine.cpp) and [engine/include/core/](engine/include/core/) |
-| Add a parameter | The four places listed at the top of [plugin/source/Parameters.h](plugin/source/Parameters.h) |
-| Call C++ from the UI | Register a native function in [plugin/source/WebUiBridge.cpp](plugin/source/WebUiBridge.cpp), then add it to [ui/src/bridge/api.ts](ui/src/bridge/api.ts) and [ui/src/bridge/mockBackend.ts](ui/src/bridge/mockBackend.ts) |
+| To change…               | Edit                                                                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sound / DSP              | [engine/src/SamplerEngine.cpp](engine/src/SamplerEngine.cpp) and [engine/include/core/](engine/include/core/)                                                                                                                 |
+| Add a parameter          | The four places listed at the top of [plugin/source/Parameters.h](plugin/source/Parameters.h)                                                                                                                                 |
+| Call C++ from the UI     | Register a native function in [plugin/source/WebUiBridge.cpp](plugin/source/WebUiBridge.cpp), then add it to [ui/src/bridge/api.ts](ui/src/bridge/api.ts) and [ui/src/bridge/mockBackend.ts](ui/src/bridge/mockBackend.ts)    |
 | Send live data to the UI | `EngineTelemetry` in [SamplerEngine.h](engine/include/core/SamplerEngine.h), then `timerCallback()` in [WebUiBridge.cpp](plugin/source/WebUiBridge.cpp), then `Telemetry` in [ui/src/bridge/types.ts](ui/src/bridge/types.ts) |
-| Save non-parameter state | `getStateInformation` / `setStateInformation` in [plugin/source/PluginProcessor.cpp](plugin/source/PluginProcessor.cpp) |
-| Layout / screens | [ui/src/App.tsx](ui/src/App.tsx), [ui/src/layout/](ui/src/layout/), [ui/src/decks/](ui/src/decks/) |
-| Window size | `designWidth` / `designHeight` in [plugin/source/PluginEditor.h](plugin/source/PluginEditor.h), and `DESIGN_WIDTH` / `DESIGN_HEIGHT` in [ui/src/App.tsx](ui/src/App.tsx) |
+| Save non-parameter state | `getStateInformation` / `setStateInformation` in [plugin/source/PluginProcessor.cpp](plugin/source/PluginProcessor.cpp)                                                                                                       |
+| Layout / screens         | [ui/src/App.tsx](ui/src/App.tsx), [ui/src/layout/](ui/src/layout/), [ui/src/decks/](ui/src/decks/)                                                                                                                            |
+| Window size              | `designWidth` / `designHeight` in [plugin/source/PluginEditor.h](plugin/source/PluginEditor.h), and `DESIGN_WIDTH` / `DESIGN_HEIGHT` in [ui/src/App.tsx](ui/src/App.tsx)                                                      |
 
 ### Engine building blocks
 
@@ -74,6 +75,7 @@ scripts/   product-info.sh, which reads the identity block for CI
 ## Building
 
 Requirements:
+
 - CMake 3.22 or newer
 - A C++20 compiler: Visual Studio 2022 on Windows, Xcode 15 or newer on macOS, GCC or Clang on Linux
 - Node.js 20 or newer (the version is pinned in `ui/.tool-versions`)
