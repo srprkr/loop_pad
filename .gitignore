@@ -1,0 +1,10 @@
+build/
+cmake-build-*/
+ui/node_modules/
+ui/dist/
+.DS_Store
+.vs/
+.vscode/
+*.user
+installer/windows/Output/
+installer/windows/MicrosoftEdgeWebview2Setup.exe

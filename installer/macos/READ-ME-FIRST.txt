@@ -1,0 +1,20 @@
+{{PRODUCT_NAME}} for macOS
+==========================
+
+This build isn't signed with an Apple Developer ID yet, so macOS blocks it until you
+allow it once. Open Terminal, go to this folder, and run:
+
+    xattr -dr com.apple.quarantine "{{PRODUCT_NAME}}.vst3" "{{PRODUCT_NAME}}.app"
+
+Then install the plugin:
+
+    cp -R "{{PRODUCT_NAME}}.vst3" ~/Library/Audio/Plug-Ins/VST3/
+
+Restart your DAW (or rescan plugins). "{{PRODUCT_NAME}}.app" is the standalone version and
+can be moved to Applications.
+
+Without Terminal: open "{{PRODUCT_NAME}}.app" once, let macOS block it, then go to
+System Settings > Privacy & Security and click "Open Anyway". This is less reliable for
+the plugin inside a DAW, so the commands above are recommended.
+
+Repeat this for each new build until the builds are signed.
