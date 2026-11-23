@@ -33,7 +33,7 @@ Browsers start audio only after you interact with the page, so click it (or pres
 | BPM, `TAP` | Sets the tempo from 60 to 200 BPM. Type a value, use the arrows, or tap at least twice. |
 | Speaker, `VOL` | Mute and master volume. |
 | `EDIT` | Shows or hides the Pad Inspector for the selected pad: pitch (±12 semitones), volume (0–130%), its sound (one of 25, or your own recordings), and its colour. Releasing a fader plays the pad; double-clicking a fader resets it. |
-| Mic button | In the inspector, under the sound menu: records up to 3 s from the microphone onto the selected pad (press again to stop early). The silence around the sound is trimmed and its level evened out. It's named "Recording 1", "Recording 2", … until you type a new name in the **Name** field; the pad label follows. Your recordings are listed in the sound menu, so other pads can use them. The browser asks for microphone access the first time, and only allows it on https or localhost. |
+| Mic button | In the inspector, under the sound menu: records up to 3 s from the microphone onto the selected pad (press again to stop early). Background noise is cleaned up (rumble below 40 Hz is cut, and steady noise like fans, hum and hiss is learned from the silence before the sound and turned down), the silence around the sound is trimmed, the tail fades out once it reaches the noise, and the level is evened out. It's named "Recording 1", "Recording 2", … until you type a new name in the **Name** field; the pad label follows. Your recordings are listed in the sound menu, so other pads can use them. The browser asks for microphone access the first time, and only allows it on https or localhost. |
 
 **Touch screens.** Pads, transport buttons and faders work by touch, and several pads can be played at once. Double-tap a fader to reset it. On iPhones the pads play even with the silent switch on (Safari 16.4 and later).
 
@@ -50,7 +50,7 @@ src/
   audio/engine.ts              applies them on the Web Audio clock (count-in, recording, playback)
   audio/limiter.ts             the output limiter (runs in an AudioWorklet, limiter.worklet.ts)
   audio/micRecorder.ts         recording a pad sound from the microphone
-  audio/sampleEdit.ts          trimming and levelling a recording
+  audio/sampleEdit.ts          cleaning up a recording: low-cut, noise reduction, trim, levelling
   state/store.ts               app state (zustand), pad flashes
   state/persistence.ts         saving to and restoring from localStorage
   state/recordingsDb.ts        recorded sounds' audio, in IndexedDB
