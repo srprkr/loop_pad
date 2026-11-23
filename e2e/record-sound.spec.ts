@@ -4,7 +4,7 @@ import { hitPeaks, open, pad, recordAudioOutput, trackPageErrors } from "./helpe
 // Uses the test browsers' fake microphone (see helpers.ts), never a real one. Runs in Firefox
 // as well, which records in a different format (Ogg rather than WebM).
 
-const recordButton = (page: Page) => page.getByRole("button", { name: /RECORD SOUND|STOP|PROCESSING/ });
+const recordButton = (page: Page) => page.getByRole("button", { name: /^(Record sound|Stop recording|Processing recording)$/ });
 const nameField = (page: Page) => page.getByRole("textbox", { name: "Name:" });
 
 /** Taps a pad and returns the loudest hit it produced (dBFS). */
@@ -23,12 +23,18 @@ test("record a sound from the mic onto a pad, rename it, and keep it after a rel
   await page.mouse.click(5, 5); // unlock audio
   await expect(nameField(page)).toHaveCount(0); // kit sounds have no name field
 
+  // The mic's label is a tooltip, shown on hover.
+  const tooltip = page.getByRole("tooltip", { name: /Record sound/ });
+  await expect(tooltip).toHaveCSS("opacity", "0");
+  await recordButton(page).hover();
+  await expect(tooltip).toHaveCSS("opacity", "1");
+
   // Record onto pad 1 (Closed Hat): about 1.5 s, then stop.
   await recordButton(page).click();
-  await expect(recordButton(page)).toContainText("STOP");
+  await expect(recordButton(page)).toHaveAccessibleName("Stop recording");
   await page.waitForTimeout(1500);
   await recordButton(page).click();
-  await expect(recordButton(page)).toHaveText("RECORD SOUND", { timeout: 5000 });
+  await expect(recordButton(page)).toHaveAccessibleName("Record sound", { timeout: 5000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   // The pad now plays the recording, under a generic name that can be edited.

@@ -160,22 +160,27 @@ function SampleSelect() {
         </select>
         <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
       </div>
-      <RecordSoundButton />
-      {recording ? (
-        <SoundNameField id={recording.id} name={recording.name} />
-      ) : (
-        <p className="font-mono text-[10px] leading-tight text-zinc-500">
-          Category: <span className="uppercase text-zinc-300">{pad.category}</span>
-        </p>
-      )}
+      <RecordSoundRow>
+        {recording ? (
+          <SoundNameField id={recording.id} name={recording.name} />
+        ) : (
+          <p className="truncate font-mono text-[10px] leading-tight text-zinc-500">
+            Category: <span className="uppercase text-zinc-300">{pad.category}</span>
+          </p>
+        )}
+      </RecordSoundRow>
     </Card>
   );
 }
 
 type MicState = { kind: "idle" } | { kind: "recording"; startedAt: number } | { kind: "processing" } | { kind: "error"; message: string };
 
-/** Records a sound from the mic onto the selected pad. Press again to stop early. */
-function RecordSoundButton() {
+/**
+ * The mic button, with `children` (the sound's name field or category) beside it. The button
+ * records a sound onto the selected pad; press again to stop early. While recording, the
+ * elapsed time shows in place of `children`.
+ */
+function RecordSoundRow({ children }: { children: React.ReactNode }) {
   const addRecordingToPad = useAppStore((s) => s.addRecordingToPad);
   const decodeAudio = useAppStore((s) => s.decodeAudio);
   const [state, setState] = useState<MicState>({ kind: "idle" });
@@ -225,25 +230,42 @@ function RecordSoundButton() {
   };
 
   const recording = state.kind === "recording";
+  const processing = state.kind === "processing";
+  const label = recording ? "Stop recording" : processing ? "Processing recording" : "Record sound";
   return (
     <div className="flex flex-col gap-1">
-      <button
-        onClick={() => (recording ? recorder.current?.stop() : state.kind !== "processing" && void start())}
-        disabled={state.kind === "processing"}
-        title={recording ? "Stop recording" : `Record a sound from the microphone onto this pad (up to ${MAX_RECORDING_SEC} s)`}
-        className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-[11px] font-medium transition-colors ${
-          recording
-            ? "animate-pulse border-rose-500 bg-rose-600 text-white"
-            : "border-zinc-700 bg-zinc-800 text-rose-400 hover:bg-zinc-700 disabled:opacity-60"
-        }`}
-      >
-        {recording ? <Square className="h-3 w-3 fill-current" /> : <Mic className="h-3.5 w-3.5" />}
-        {recording
-          ? `STOP · ${((performance.now() - state.startedAt) / 1000).toFixed(1)} s`
-          : state.kind === "processing"
-            ? "PROCESSING…"
-            : "RECORD SOUND"}
-      </button>
+      <div className="flex items-center gap-2">
+        <div className="group/mic relative shrink-0">
+          <button
+            onClick={() => (recording ? recorder.current?.stop() : !processing && void start())}
+            disabled={processing}
+            aria-label={label}
+            className={`flex h-6 w-6 items-center justify-center rounded-md border transition-colors ${
+              recording
+                ? "animate-pulse border-rose-500 bg-rose-600 text-white"
+                : "border-zinc-700 bg-zinc-800 text-rose-400 hover:bg-zinc-700 disabled:opacity-60"
+            }`}
+          >
+            {recording ? <Square className="h-2.5 w-2.5 fill-current" /> : <Mic className="h-3.5 w-3.5" />}
+          </button>
+          {/* Tooltip: shows at once on hover (a title attribute takes a second or so). */}
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute left-0 top-full z-10 mt-1.5 whitespace-nowrap rounded border border-zinc-700 bg-zinc-950 px-1.5 py-0.5 font-mono text-[10px] text-zinc-200 opacity-0 shadow-lg transition-opacity group-hover/mic:opacity-100"
+          >
+            {recording ? "Stop recording" : processing ? "Processing…" : `Record sound (up to ${MAX_RECORDING_SEC} s)`}
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          {recording ? (
+            <p className="font-mono text-[10px] text-rose-400">Recording… {((performance.now() - state.startedAt) / 1000).toFixed(1)} s</p>
+          ) : processing ? (
+            <p className="font-mono text-[10px] text-zinc-400">Processing…</p>
+          ) : (
+            children
+          )}
+        </div>
+      </div>
       {state.kind === "error" && (
         <p role="alert" className="font-mono text-[10px] leading-tight text-rose-400">
           {state.message}
