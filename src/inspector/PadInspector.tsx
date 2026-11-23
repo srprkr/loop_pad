@@ -31,6 +31,9 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
   return <div className={`flex h-40 rounded-xl border border-zinc-800/60 bg-zinc-900/60 ${className}`}>{children}</div>;
 }
 
+/** Volume ticks every 25%, up to the 130% maximum. */
+const volumeMarks = [0, 0.25, 0.5, 0.75, 1, PAD_VOLUME_RANGE.max];
+
 function PadFaders() {
   const { pad } = useSelectedPad();
   const update = useAppStore((s) => s.updateSelectedPad);
@@ -45,6 +48,8 @@ function PadFaders() {
         readout={`${pitch > 0 ? `+${pitch}` : pitch} st`}
         value={pitch}
         {...PITCH_RANGE}
+        marks={[-12, -6, 0, 6, 12]}
+        detent={0}
         resetTitle="Double-click or double-tap to reset (0 st)"
         onChange={(v) => update({ pitchSemitones: v })}
         onEnd={(v) => preview({ pitchSemitones: v })}
@@ -58,6 +63,8 @@ function PadFaders() {
         readout={`${Math.round(pad.volume * 100)}%`}
         value={pad.volume}
         {...PAD_VOLUME_RANGE}
+        marks={volumeMarks}
+        detent={1}
         resetTitle="Double-click or double-tap to reset (100%)"
         onChange={(v) => update({ volume: v })}
         onEnd={(v) => preview({ volume: v })}
@@ -71,6 +78,9 @@ function PadFaders() {
 }
 
 interface FaderProps {
+  /** Values to draw scale ticks at, and the one drawn brighter (the reset point). */
+  marks: number[];
+  detent: number;
   label: string;
   readout: string;
   value: number;
@@ -83,13 +93,26 @@ interface FaderProps {
   onReset(): void;
 }
 
-function Fader({ label, readout, value, min, max, step, resetTitle, onChange, onEnd, onReset }: FaderProps) {
+function Fader({ label, readout, value, min, max, step, marks, detent, resetTitle, onChange, onEnd, onReset }: FaderProps) {
   return (
     <div className="group flex h-full flex-col items-center justify-between" title={resetTitle}>
       <button onDoubleClick={onReset} className="font-mono text-[10px] font-semibold text-indigo-400 group-hover:underline">
         {readout}
       </button>
-      <Slider orientation="vertical" length={88} value={value} min={min} max={max} step={step} onChange={onChange} onEnd={onEnd} onDoubleClick={onReset} />
+      <Slider
+        look="fader"
+        orientation="vertical"
+        length={88}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        marks={marks}
+        detent={detent}
+        onChange={onChange}
+        onEnd={onEnd}
+        onDoubleClick={onReset}
+      />
       <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">{label}</span>
     </div>
   );
