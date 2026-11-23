@@ -26,7 +26,7 @@ interface SliderProps {
 const DOUBLE_TAP_MS = 350;
 
 /** Thumb size: along the track, and across it. */
-const THUMBS = { knob: { along: 18, across: 18 }, fader: { along: 14, across: 30 } } as const;
+const THUMBS = { knob: { along: 18, across: 18 }, fader: { along: 14, across: 21 } } as const;
 
 /**
     A pointer-driven slider (not <input type=range>, which can't be styled as a vertical fader
@@ -143,8 +143,8 @@ function FaderParts({
             className={`absolute ${detent ? "bg-zinc-400" : "bg-zinc-700"}`}
             style={
               vertical
-                ? { height: 1, width: detent ? 8 : 5, bottom: at, [side === "start" ? "left" : "right"]: 0 }
-                : { width: 1, height: detent ? 8 : 5, left: at, [side === "start" ? "top" : "bottom"]: 0 }
+                ? { height: 1, width: detent ? 7 : 5, bottom: at, [side === "start" ? "left" : "right"]: 0 }
+                : { width: 1, height: detent ? 7 : 5, left: at, [side === "start" ? "top" : "bottom"]: 0 }
             }
           />
         )),
