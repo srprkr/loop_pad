@@ -32,13 +32,14 @@ Browsers start audio only after you interact with the page, so click it (or pres
 | Metronome button | Turns the click on or off. While recording, it flashes green on each beat. |
 | BPM, `TAP` | Sets the tempo from 60 to 200 BPM. Type a value, use the arrows, or tap at least twice. |
 | Speaker, `VOL` | Mute and master volume. |
-| `EDIT` | Shows or hides the Pad Inspector for the selected pad: pitch (±12 semitones), volume (0–130%), its sound (one of 25), and its colour. Releasing a fader plays the pad; double-clicking a fader resets it. |
+| `EDIT` | Shows or hides the Pad Inspector for the selected pad: pitch (±12 semitones), volume (0–130%), its sound (one of 25, or your own recordings), and its colour. Releasing a fader plays the pad; double-clicking a fader resets it. |
+| `RECORD SOUND` | In the inspector: records up to 3 s from the microphone onto the selected pad (press again to stop early). The silence around the sound is trimmed and its level evened out. It's named "Recording 1", "Recording 2", … until you type a new name in the **Name** field; the pad label follows. Your recordings are listed in the sound menu, so other pads can use them. The browser asks for microphone access the first time, and only allows it on https or localhost. |
 
 **Touch screens.** Pads, transport buttons and faders work by touch, and several pads can be played at once. Double-tap a fader to reset it. On iPhones the pads play even with the silent switch on (Safari 16.4 and later).
 
 **Keys.** `1 2 3 4 5` / `Q W E R T` / `A S D F G` / `Z X C V B` / `Y U I O P`. Each grid size uses as many rows and columns as it has.
 
-**Saved in the browser.** Volume, mute, tempo and metronome, all three pad sets, the open/closed inspector, the selected pads and the recorded loop are kept in `localStorage`, so a reload comes back where you left off. To reset everything, clear the site's data in the browser, or run `localStorage.removeItem("loop-pad:v1")` in the console.
+**Saved in the browser.** Volume, mute, tempo and metronome, all three pad sets, the open/closed inspector, the selected pads and the recorded loop are kept in `localStorage`, so a reload comes back where you left off. Recorded sounds' audio is kept in IndexedDB (`localStorage` is too small for audio). To reset everything, clear the site's data in the browser.
 
 ## How it works
 
@@ -48,8 +49,11 @@ src/
   audio/transport.ts           the loop rules as pure functions (modes, quantizing, step actions)
   audio/engine.ts              applies them on the Web Audio clock (count-in, recording, playback)
   audio/limiter.ts             the output limiter (runs in an AudioWorklet, limiter.worklet.ts)
+  audio/micRecorder.ts         recording a pad sound from the microphone
+  audio/sampleEdit.ts          trimming and levelling a recording
   state/store.ts               app state (zustand), pad flashes
   state/persistence.ts         saving to and restoring from localStorage
+  state/recordingsDb.ts        recorded sounds' audio, in IndexedDB
   layout/TopBar.tsx            grid size, transport, tempo, volume
   pads/PadGrid.tsx             the pads
   inspector/PadInspector.tsx   pitch / volume faders, sound, colour
@@ -74,7 +78,7 @@ src/
 ## Testing
 
 - **Unit tests** ([src/audio/transport.test.ts](src/audio/transport.test.ts), [src/state/persistence.test.ts](src/state/persistence.test.ts)) check the loop rules without audio: count-in, the 4-bar take and the switch to playback, snapping to the nearest 16th (including the count-in and end-of-loop edges), same-sound replacement, the metronome pattern, TAP tempo, and that saved state is restored and bad saved data is ignored. They take under a second.
-- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. A phone-emulation run checks that the first tap makes sound, taps select pads, the layout fits the screen, transport buttons work by touch and faders reset on a double tap. They run at 200 BPM to stay quick (about 15 s in total) and fail on any page error. Sound is checked by tapping the app's output into an analyser. A timing test taps at the moment a click reaches the speakers and checks the hit lands on that step. Level tests record the output and check that every tap of a pad comes out equally loud and that loud hits don't clip; they also run in Firefox, where taps used to drop by up to 10 dB at random. The test browsers are muted, so nothing plays through your speakers; the tests capture the sound inside the page. The first run needs the browsers: `npx playwright install chromium firefox`.
+- **Browser tests** ([e2e/](e2e/)) click through the real app in headless Chromium with real Web Audio: the layout and EDIT, grid sizes and keys, REC → count-in → recording → automatic playback with the hit played back, PLAY / PAUSE, TAP, and settings and a recorded loop surviving a reload. A phone-emulation run checks that the first tap makes sound, taps select pads, the layout fits the screen, transport buttons work by touch and faders reset on a double tap. They run at 200 BPM to stay quick (about 15 s in total) and fail on any page error. Sound is checked by tapping the app's output into an analyser. A timing test taps at the moment a click reaches the speakers and checks the hit lands on that step. Level tests record the output and check that every tap of a pad comes out equally loud and that loud hits don't clip; they also run in Firefox, where taps used to drop by up to 10 dB at random. A recording test records a pad sound, renames it and checks it survives a reload, in Chromium and Firefox. The test browsers are muted and use a fake microphone, so nothing plays through your speakers and your real mic is never used; the tests capture the sound inside the page. The first run needs the browsers: `npx playwright install chromium firefox`.
 
 ## CI
 

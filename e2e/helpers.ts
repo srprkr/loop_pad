@@ -1,7 +1,16 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Keeps test Chromium off the speakers (Firefox: media.volume_scale in playwright.config.ts). */
-export const MUTED_CHROMIUM_ARGS = ["--mute-audio"];
+/**
+    Test Chromium: muted, so nothing plays through the speakers, and with a fake microphone
+    (a beeping test signal) whose permission prompt is accepted, so no test uses the real mic.
+    Firefox gets the same through FIREFOX_TEST_PREFS.
+*/
+export const TEST_CHROMIUM_ARGS = ["--mute-audio", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"];
+export const FIREFOX_TEST_PREFS = {
+  "media.volume_scale": "0.0",
+  "media.navigator.streams.fake": true,
+  "media.navigator.permission.disabled": true,
+};
 
 /** Fails the test on any uncaught page error (e.g. a Web Audio call in the wrong order). */
 export function trackPageErrors(page: Page) {

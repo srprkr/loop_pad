@@ -17,6 +17,7 @@ describe("restoring saved state", () => {
     expect(state.kit).toEqual({ gridSize: "4x4", pads: DEFAULT_PADS });
     expect(state.ui).toEqual(DEFAULT_UI_STATE);
     expect(state.loop).toEqual([]);
+    expect(state.recordings).toEqual([]);
   });
 
   it("restores settings, grid, pad edits, view and loop", () => {
@@ -47,6 +48,26 @@ describe("restoring saved state", () => {
 
     const unknown = { ...valid.kit, pads: { ...valid.kit.pads, "4x4": DEFAULT_PADS["4x4"].map((p) => ({ ...p, soundType: "gong" })) } };
     expect(parseSavedState(JSON.stringify({ kit: unknown })).kit.pads["4x4"]).toEqual(DEFAULT_PADS["4x4"]);
+  });
+
+  it("keeps pads and loop hits that use a recorded sound, while the recording is listed", () => {
+    const recordings = [{ id: "rec_abc", name: "Snap" }];
+    const pads = { ...DEFAULT_PADS, "4x4": DEFAULT_PADS["4x4"].map((p, i) => (i === 0 ? { ...p, soundType: "rec_abc", name: "Snap", category: "custom" } : p)) };
+    const loop = [{ step: 2, soundType: "rec_abc", pitchSemitones: 0, volume: 1, padKey: "1" }];
+
+    const kept = parseSavedState(JSON.stringify({ kit: { gridSize: "4x4", pads }, loop, recordings }));
+    expect(kept.recordings).toEqual(recordings);
+    expect(kept.kit.pads["4x4"][0].soundType).toBe("rec_abc");
+    expect(kept.loop).toEqual(loop);
+
+    const unlisted = parseSavedState(JSON.stringify({ kit: { gridSize: "4x4", pads }, loop }));
+    expect(unlisted.kit.pads["4x4"]).toEqual(DEFAULT_PADS["4x4"]);
+    expect(unlisted.loop).toEqual([]);
+  });
+
+  it("drops malformed recordings and shortens long names", () => {
+    const recordings = [{ id: "rec_a", name: "x".repeat(40) }, { id: "clap", name: "Not a recording id" }, { id: "rec_b" }, null];
+    expect(parseSavedState(JSON.stringify({ recordings })).recordings).toEqual([{ id: "rec_a", name: "x".repeat(24) }]);
   });
 
   it("ignores an unknown grid size", () => {

@@ -1,6 +1,9 @@
-import { ChevronDown, Disc, Palette, Sliders } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Disc, Mic, Palette, Sliders, Square } from "lucide-react";
+import { startMicRecording, type MicRecording } from "../audio/micRecorder";
+import { MAX_RECORDING_SEC, prepareRecording } from "../audio/sampleEdit";
 import { Slider } from "../components/Slider";
-import { KIT_SOUNDS, PAD_VOLUME_RANGE, PITCH_RANGE, findSound } from "../data/kit";
+import { KIT_SOUNDS, MAX_SOUND_NAME, PAD_VOLUME_RANGE, PITCH_RANGE } from "../data/kit";
 import { COLOR_THEMES, THEME_KEYS, themeFor } from "../data/themes";
 import { useAppStore, useSelectedPad } from "../state/store";
 
@@ -120,11 +123,12 @@ function Fader({ label, readout, value, min, max, step, marks, detent, resetTitl
 
 function SampleSelect() {
   const { pad } = useSelectedPad();
-  const update = useAppStore((s) => s.updateSelectedPad);
-  const preview = useAppStore((s) => s.previewSelectedPad);
+  const recordings = useAppStore((s) => s.recordings);
+  const setSound = useAppStore((s) => s.setSelectedPadSound);
+  const recording = recordings.find((r) => r.id === pad.soundType);
 
   return (
-    <Card className="flex-col justify-center gap-2 p-3.5">
+    <Card className="flex-col justify-start gap-2 p-3.5">
       <label className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-zinc-400">
         <Disc className="h-3.5 w-3.5 text-zinc-400" />
         Audio Sample
@@ -132,27 +136,158 @@ function SampleSelect() {
       <div className="relative">
         <select
           value={pad.soundType}
-          onChange={(e) => {
-            const sound = findSound(e.target.value);
-            if (!sound) return;
-            // Choosing a sound renames the pad to it (refs/source_code.jsx:1434-1443).
-            update({ soundType: sound.id, name: sound.label, category: sound.category });
-            preview({ soundType: sound.id });
-          }}
+          title="Sound"
+          // Choosing a sound renames the pad to it (refs/source_code.jsx:1434-1443).
+          onChange={(e) => setSound(e.target.value)}
           className="w-full cursor-pointer appearance-none rounded-lg border border-zinc-700 bg-zinc-900 py-2 pl-2.5 pr-7 text-xs text-zinc-200 focus:border-indigo-500 focus:outline-none"
         >
-          {KIT_SOUNDS.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label} ({s.category.toUpperCase()})
-            </option>
-          ))}
+          <optgroup label="Kit">
+            {KIT_SOUNDS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label} ({s.category.toUpperCase()})
+              </option>
+            ))}
+          </optgroup>
+          {recordings.length > 0 && (
+            <optgroup label="Your recordings">
+              {recordings.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} (CUSTOM)
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
       </div>
-      <p className="font-mono text-[10px] leading-tight text-zinc-500">
-        Category: <span className="uppercase text-zinc-300">{pad.category}</span>
-      </p>
+      <RecordSoundButton />
+      {recording ? (
+        <SoundNameField id={recording.id} name={recording.name} />
+      ) : (
+        <p className="font-mono text-[10px] leading-tight text-zinc-500">
+          Category: <span className="uppercase text-zinc-300">{pad.category}</span>
+        </p>
+      )}
     </Card>
+  );
+}
+
+type MicState = { kind: "idle" } | { kind: "recording"; startedAt: number } | { kind: "processing" } | { kind: "error"; message: string };
+
+/** Records a sound from the mic onto the selected pad. Press again to stop early. */
+function RecordSoundButton() {
+  const addRecordingToPad = useAppStore((s) => s.addRecordingToPad);
+  const decodeAudio = useAppStore((s) => s.decodeAudio);
+  const [state, setState] = useState<MicState>({ kind: "idle" });
+  const recorder = useRef<MicRecording | null>(null);
+  const [, tick] = useState(0);
+
+  // Redraw the elapsed time while recording.
+  useEffect(() => {
+    if (state.kind !== "recording") return;
+    const timer = window.setInterval(() => tick((n) => n + 1), 100);
+    return () => window.clearInterval(timer);
+  }, [state.kind]);
+
+  // Clear an error after a few seconds.
+  useEffect(() => {
+    if (state.kind !== "error") return;
+    const timer = window.setTimeout(() => setState({ kind: "idle" }), 5000);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+
+  // Stop (and release the mic) if the inspector closes mid-recording.
+  useEffect(() => () => recorder.current?.stop(), []);
+
+  const start = async () => {
+    // The recording goes to the pad selected now, even if another pad is played meanwhile.
+    const { kit, ui } = useAppStore.getState();
+    const target = { grid: kit.gridSize, index: ui.selectedPad[kit.gridSize] ?? 0 };
+    try {
+      const rec = await startMicRecording();
+      recorder.current = rec;
+      setState({ kind: "recording", startedAt: performance.now() });
+      const blob = await rec.result;
+      recorder.current = null;
+      setState({ kind: "processing" });
+      const { channels, sampleRate } = await decodeAudio(blob);
+      const samples = prepareRecording(channels, sampleRate);
+      if (!samples) {
+        setState({ kind: "error", message: "Didn't hear anything. Try again, closer to the mic." });
+        return;
+      }
+      addRecordingToPad(target, samples, sampleRate);
+      setState({ kind: "idle" });
+    } catch (e) {
+      recorder.current = null;
+      setState({ kind: "error", message: micErrorMessage(e) });
+    }
+  };
+
+  const recording = state.kind === "recording";
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        onClick={() => (recording ? recorder.current?.stop() : state.kind !== "processing" && void start())}
+        disabled={state.kind === "processing"}
+        title={recording ? "Stop recording" : `Record a sound from the microphone onto this pad (up to ${MAX_RECORDING_SEC} s)`}
+        className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-[11px] font-medium transition-colors ${
+          recording
+            ? "animate-pulse border-rose-500 bg-rose-600 text-white"
+            : "border-zinc-700 bg-zinc-800 text-rose-400 hover:bg-zinc-700 disabled:opacity-60"
+        }`}
+      >
+        {recording ? <Square className="h-3 w-3 fill-current" /> : <Mic className="h-3.5 w-3.5" />}
+        {recording
+          ? `STOP · ${((performance.now() - state.startedAt) / 1000).toFixed(1)} s`
+          : state.kind === "processing"
+            ? "PROCESSING…"
+            : "RECORD SOUND"}
+      </button>
+      {state.kind === "error" && (
+        <p role="alert" className="font-mono text-[10px] leading-tight text-rose-400">
+          {state.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function micErrorMessage(e: unknown) {
+  const name = e instanceof DOMException ? e.name : "";
+  if (name === "NotAllowedError") return "Microphone access is blocked. Allow it in the browser's site settings.";
+  if (name === "NotFoundError") return "No microphone found.";
+  return e instanceof Error ? e.message : "Recording failed.";
+}
+
+/** The recorded sound's name; the pad label follows it. Saved on Enter or leaving the field. */
+function SoundNameField({ id, name }: { id: string; name: string }) {
+  const rename = useAppStore((s) => s.renameRecording);
+  const [text, setText] = useState(name);
+  useEffect(() => setText(name), [name]);
+  const commit = () => {
+    if (text.trim()) rename(id, text);
+    else setText(name); // blank: keep the old name
+  };
+
+  return (
+    <label className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-500">
+      Name:
+      <input
+        value={text}
+        maxLength={MAX_SOUND_NAME}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            setText(name);
+            setTimeout(() => (e.target as HTMLInputElement).blur());
+          }
+        }}
+        className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-100 focus:border-indigo-500 focus:outline-none"
+      />
+    </label>
   );
 }
 
@@ -161,7 +296,7 @@ function ColorPalette() {
   const update = useAppStore((s) => s.updateSelectedPad);
 
   return (
-    <Card className="flex-col justify-center gap-2 p-3.5">
+    <Card className="flex-col justify-start gap-2 p-3.5">
       <label className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-zinc-400">
         <Palette className="h-3.5 w-3.5 text-zinc-400" />
         Pad Color

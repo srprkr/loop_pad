@@ -5,8 +5,8 @@
 // the app.
 
 import { LOOP_STEPS } from "../audio/transport";
-import { findSound } from "../data/kit";
-import type { GridSize, KitState, LoopNote, Settings, UiState } from "../types";
+import { MAX_SOUND_NAME, findSound, isRecordingId } from "../data/kit";
+import type { GridSize, KitState, LoopNote, Recording, Settings, UiState } from "../types";
 import { BPM_RANGE, DEFAULT_KIT, DEFAULT_SETTINGS, DEFAULT_UI_STATE } from "./defaults";
 
 export const STORAGE_KEY = "loop-pad:v1";
@@ -16,6 +16,8 @@ export interface SavedState {
   kit: KitState;
   ui: UiState;
   loop: LoopNote[];
+  /** Names of recorded sounds; their audio is in IndexedDB. */
+  recordings: Recording[];
 }
 
 export const clamp = (v: unknown, min: number, max: number, fallback: number) =>
@@ -56,11 +58,18 @@ export function parseSavedState(text: string | null): SavedState {
     metronome: typeof s.metronome === "boolean" ? s.metronome : DEFAULT_SETTINGS.metronome,
   };
 
+  const recordings: Recording[] = Array.isArray(saved.recordings)
+    ? saved.recordings
+        .filter((r) => isRecordingId(r?.id) && typeof r.name === "string")
+        .map((r) => ({ id: r.id, name: r.name.slice(0, MAX_SOUND_NAME) }))
+    : [];
+  const known = (id: unknown) => (typeof id === "string" && findSound(id) !== undefined) || recordings.some((r) => r.id === id);
+
   // A pad set is kept only if it is complete and every pad plays a known sound.
   const pads = { ...DEFAULT_KIT.pads };
   for (const size of Object.keys(pads) as GridSize[]) {
     const list = saved.kit?.pads?.[size];
-    if (Array.isArray(list) && list.length === DEFAULT_KIT.pads[size].length && list.every((p) => findSound(p?.soundType)))
+    if (Array.isArray(list) && list.length === DEFAULT_KIT.pads[size].length && list.every((p) => known(p?.soundType)))
       pads[size] = list;
   }
   const gridSize = saved.kit?.gridSize && pads[saved.kit.gridSize] ? saved.kit.gridSize : DEFAULT_KIT.gridSize;
@@ -71,8 +80,8 @@ export function parseSavedState(text: string | null): SavedState {
   };
 
   const loop = Array.isArray(saved.loop)
-    ? saved.loop.filter((n) => Number.isInteger(n?.step) && n.step >= 0 && n.step < LOOP_STEPS && findSound(n.soundType))
+    ? saved.loop.filter((n) => Number.isInteger(n?.step) && n.step >= 0 && n.step < LOOP_STEPS && known(n.soundType))
     : [];
 
-  return { settings, kit: { gridSize, pads }, ui, loop };
+  return { settings, kit: { gridSize, pads }, ui, loop, recordings };
 }

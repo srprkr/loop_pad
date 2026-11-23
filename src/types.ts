@@ -16,6 +16,12 @@ export interface PadConfig {
   volume: number; // 0 .. 1.3
 }
 
+/** A sound recorded with the mic. Its audio is in IndexedDB (recordingsDb.ts), keyed by id. */
+export interface Recording {
+  id: string; // "rec_…"
+  name: string;
+}
+
 /** The three pad sets and which one is showing. */
 export interface KitState {
   gridSize: GridSize;

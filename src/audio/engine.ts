@@ -64,6 +64,10 @@ export interface AudioEngine {
   onTelemetry(fn: (t: Telemetry) => void): () => void;
   /** Called whenever the recorded loop changes. */
   onLoopChange(fn: (loop: LoopNote[]) => void): () => void;
+  /** Makes a recorded sound playable under its id (mono samples). */
+  setCustomSound(id: string, samples: Float32Array, sampleRate: number): void;
+  /** Decodes recorded audio (as MediaRecorder makes it) into per-channel samples. */
+  decodeAudio(data: Blob): Promise<{ channels: Float32Array[]; sampleRate: number }>;
 }
 
 export function createAudioEngine(initial: Settings): AudioEngine {
@@ -154,7 +158,7 @@ export function createAudioEngine(initial: Settings): AudioEngine {
 
   function schedule() {
     if (!running || !audio) return;
-    const { ctx, master, noise } = audio;
+    const { ctx, master } = audio;
 
     while (nextStepTime < ctx.currentTime + LOOKAHEAD_SEC) {
       const step = nextStep;
@@ -168,7 +172,7 @@ export function createAudioEngine(initial: Settings): AudioEngine {
       if (actions.playStep !== null) {
         for (const note of loop) {
           if (note.step !== actions.playStep) continue;
-          triggerSound(ctx, master, noise, note.soundType, note.pitchSemitones, note.volume, time);
+          playSound(note.soundType, note.pitchSemitones, note.volume, time);
           timedEvents.push({ time, kind: "hit", hit: { padKey: note.padKey, soundType: note.soundType } });
         }
       }
@@ -209,7 +213,44 @@ export function createAudioEngine(initial: Settings): AudioEngine {
   }, TELEMETRY_INTERVAL_MS);
 
   //==========================================================================
+  //==========================================================================
+  // Recorded sounds: mono samples, turned into an AudioBuffer once there is an AudioContext.
+  const customSounds = new Map<string, { samples: Float32Array; sampleRate: number; buffer?: AudioBuffer }>();
+
+  /** Plays a kit sound or a recorded one at `time`. */
+  function playSound(soundType: string, pitch: number, volume: number, time: number) {
+    const { ctx, master, noise } = getAudio();
+    const custom = customSounds.get(soundType);
+    if (!custom) {
+      triggerSound(ctx, master, noise, soundType, pitch, volume, time);
+      return;
+    }
+    if (!custom.buffer) {
+      custom.buffer = ctx.createBuffer(1, custom.samples.length, custom.sampleRate);
+      custom.buffer.copyToChannel(custom.samples, 0);
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = custom.buffer;
+    source.playbackRate.value = Math.pow(2, pitch / 12); // pitch by resampling, like a sampler
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(master);
+    source.start(time);
+  }
+
   return {
+    setCustomSound(id, samples, sampleRate) {
+      customSounds.set(id, { samples, sampleRate });
+    },
+
+    async decodeAudio(data) {
+      const { ctx } = getAudio();
+      const decoded = await ctx.decodeAudioData(await data.arrayBuffer());
+      const channels = Array.from({ length: decoded.numberOfChannels }, (_, c) => decoded.getChannelData(c));
+      return { channels, sampleRate: decoded.sampleRate };
+    },
+
     unlock() {
       getAudio();
     },
@@ -220,16 +261,16 @@ export function createAudioEngine(initial: Settings): AudioEngine {
     },
 
     triggerPad(soundType, pitch, volume, padKey) {
-      const { ctx, master, noise } = getAudio();
-      triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime + LIVE_LEAD_SEC);
+      const { ctx } = getAudio();
+      playSound(soundType, pitch, volume, ctx.currentTime + LIVE_LEAD_SEC);
       // You play along to the clicks you hear, which reach the speakers some time after
       // currentTime. Recorded at what you were hearing, so a tap on the click lands on its step.
       recordHit(soundType, pitch, volume, padKey, ctx.currentTime - heardLatencySec(ctx));
     },
 
     previewSound(soundType, pitch, volume) {
-      const { ctx, master, noise } = getAudio();
-      triggerSound(ctx, master, noise, soundType, pitch, volume, ctx.currentTime + LIVE_LEAD_SEC);
+      const { ctx } = getAudio();
+      playSound(soundType, pitch, volume, ctx.currentTime + LIVE_LEAD_SEC);
     },
 
     record() {
